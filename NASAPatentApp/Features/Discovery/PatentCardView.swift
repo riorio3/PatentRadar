@@ -3,10 +3,27 @@ import SwiftUI
 struct PatentCardView: View {
     let patent: Patent
     @EnvironmentObject var patentStore: PatentStore
+    @State private var isHovered = false
+    @State private var bookmarkScale: CGFloat = 1.0
+
+    private var categoryGradient: [Color] {
+        switch patent.category.lowercased() {
+        case let c where c.contains("aero"): return [.blue, .cyan]
+        case let c where c.contains("propulsion"): return [.orange, .red]
+        case let c where c.contains("material"): return [.purple, .pink]
+        case let c where c.contains("sensor"): return [.green, .teal]
+        case let c where c.contains("robot"): return [.orange, .yellow]
+        case let c where c.contains("software"), let c where c.contains("information"): return [.cyan, .blue]
+        case let c where c.contains("power"), let c where c.contains("energy"): return [.yellow, .orange]
+        case let c where c.contains("health"): return [.red, .pink]
+        case let c where c.contains("environment"): return [.green, .mint]
+        default: return [.blue, .purple]
+        }
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            // Image or Icon Header
+            // Image or Icon Header with gradient overlay
             ZStack {
                 if let imageURL = patent.imageURL, let url = URL(string: imageURL) {
                     AsyncImage(url: url) { phase in
@@ -16,31 +33,40 @@ struct PatentCardView: View {
                                 .resizable()
                                 .aspectRatio(contentMode: .fill)
                         case .failure:
-                            placeholderIcon
+                            placeholderBackground
                         case .empty:
-                            ProgressView()
+                            placeholderBackground
+                                .overlay(
+                                    ProgressView()
+                                        .tint(.white)
+                                )
                         @unknown default:
-                            placeholderIcon
+                            placeholderBackground
                         }
                     }
                 } else {
-                    placeholderIcon
+                    placeholderBackground
                 }
             }
             .frame(height: 100)
             .frame(maxWidth: .infinity)
-            .background(Color(.systemGray6))
-            .clipShape(RoundedRectangle(cornerRadius: 8))
+            .clipShape(RoundedRectangle(cornerRadius: 10))
 
-            // Category Badge
-            HStack {
+            // Category Badge with gradient
+            HStack(spacing: 4) {
                 Image(systemName: patent.categoryIcon)
-                    .font(.caption2)
+                    .font(.caption2.weight(.semibold))
                 Text(patent.category)
-                    .font(.caption2)
+                    .font(.caption2.weight(.medium))
                     .lineLimit(1)
             }
-            .foregroundStyle(.blue)
+            .foregroundStyle(.white)
+            .padding(.horizontal, 8)
+            .padding(.vertical, 4)
+            .background(
+                LinearGradient(colors: categoryGradient, startPoint: .leading, endPoint: .trailing)
+            )
+            .clipShape(Capsule())
 
             // Title
             Text(patent.title)
@@ -56,7 +82,7 @@ struct PatentCardView: View {
 
             Spacer(minLength: 0)
 
-            // Save Button
+            // Save Button with animation
             HStack {
                 if let center = patent.center {
                     Text(center)
@@ -65,24 +91,59 @@ struct PatentCardView: View {
                 }
                 Spacer()
                 Button {
+                    withAnimation(.spring(response: 0.3, dampingFraction: 0.5)) {
+                        bookmarkScale = 1.3
+                    }
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
+                        withAnimation(.spring(response: 0.3, dampingFraction: 0.6)) {
+                            bookmarkScale = 1.0
+                        }
+                    }
                     toggleSave()
                 } label: {
                     Image(systemName: patentStore.isSaved(patent) ? "bookmark.fill" : "bookmark")
-                        .foregroundStyle(patentStore.isSaved(patent) ? .blue : .secondary)
+                        .foregroundStyle(
+                            patentStore.isSaved(patent) ?
+                            LinearGradient(colors: [.blue, .purple], startPoint: .top, endPoint: .bottom) :
+                            LinearGradient(colors: [.secondary, .secondary], startPoint: .top, endPoint: .bottom)
+                        )
+                        .scaleEffect(bookmarkScale)
                 }
             }
         }
         .padding()
         .frame(height: 280)
-        .background(Color(.systemBackground))
-        .clipShape(RoundedRectangle(cornerRadius: 16))
-        .shadow(color: .black.opacity(0.08), radius: 8, y: 4)
+        .background(
+            RoundedRectangle(cornerRadius: 16)
+                .fill(Color(.systemBackground))
+                .shadow(color: .black.opacity(isHovered ? 0.15 : 0.08), radius: isHovered ? 12 : 8, y: isHovered ? 6 : 4)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 16)
+                .stroke(
+                    LinearGradient(colors: categoryGradient.map { $0.opacity(0.3) }, startPoint: .topLeading, endPoint: .bottomTrailing),
+                    lineWidth: 1
+                )
+        )
+        .scaleEffect(isHovered ? 1.02 : 1.0)
+        .animation(.easeInOut(duration: 0.2), value: isHovered)
+        .onHover { hovering in
+            isHovered = hovering
+        }
     }
 
-    private var placeholderIcon: some View {
-        Image(systemName: patent.categoryIcon)
-            .font(.system(size: 36))
-            .foregroundStyle(.blue.opacity(0.6))
+    private var placeholderBackground: some View {
+        ZStack {
+            LinearGradient(
+                colors: categoryGradient.map { $0.opacity(0.8) },
+                startPoint: .topLeading,
+                endPoint: .bottomTrailing
+            )
+
+            Image(systemName: patent.categoryIcon)
+                .font(.system(size: 36, weight: .light))
+                .foregroundStyle(.white.opacity(0.9))
+        }
     }
 
     private func toggleSave() {
