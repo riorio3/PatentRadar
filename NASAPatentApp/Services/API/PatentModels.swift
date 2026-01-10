@@ -12,9 +12,28 @@ struct Patent: Identifiable, Codable, Hashable {
     let center: String?
     let trl: String? // Technology Readiness Level
 
+    // Extended detail fields (populated when fetching detail page)
+    var benefits: [String]?
+    var applications: [PatentApplication]?
+    var patentNumbers: [String]?
+    var caseNumbers: [String]?
+    var imageURLs: [String]?
+    var relatedTechnologies: [RelatedTechnology]?
+    var detailLoaded: Bool = false
+
     var usptoURL: URL? {
-        guard let num = patentNumber else { return nil }
+        guard let num = patentNumber ?? patentNumbers?.first else { return nil }
         return URL(string: "https://patents.google.com/patent/US\(num)")
+    }
+
+    var allImages: [String] {
+        if let urls = imageURLs, !urls.isEmpty {
+            return urls
+        }
+        if let url = imageURL {
+            return [url]
+        }
+        return []
     }
 
     var categoryIcon: String {
@@ -35,6 +54,34 @@ struct Patent: Identifiable, Codable, Hashable {
         case let c where c.contains("information"): return "doc.text"
         default: return "star"
         }
+    }
+}
+
+// MARK: - Patent Application (Use Case)
+struct PatentApplication: Identifiable, Codable, Hashable {
+    let id: UUID
+    let domain: String
+    let description: String
+
+    init(domain: String, description: String) {
+        self.id = UUID()
+        self.domain = domain
+        self.description = description
+    }
+}
+
+// MARK: - Related Technology
+struct RelatedTechnology: Identifiable, Codable, Hashable {
+    let id: String
+    let title: String
+    let caseNumber: String
+    let imageURL: String?
+
+    init(id: String, title: String, caseNumber: String, imageURL: String? = nil) {
+        self.id = id
+        self.title = title
+        self.caseNumber = caseNumber
+        self.imageURL = imageURL
     }
 }
 
@@ -79,7 +126,14 @@ struct NASAPatentResponse: Codable {
                 patentNumber: nil,
                 imageURL: imageURL,
                 center: center,
-                trl: nil
+                trl: nil,
+                benefits: nil,
+                applications: nil,
+                patentNumbers: nil,
+                caseNumbers: nil,
+                imageURLs: nil,
+                relatedTechnologies: nil,
+                detailLoaded: false
             )
         }
     }

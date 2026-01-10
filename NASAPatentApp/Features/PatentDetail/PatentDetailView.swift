@@ -3,16 +3,23 @@ import SwiftUI
 struct PatentDetailView: View {
     let patent: Patent
     @EnvironmentObject var patentStore: PatentStore
+    @State private var enrichedPatent: Patent?
+    @State private var isLoadingDetails = true
     @State private var showAnalysis = false
     @State private var analysis: BusinessAnalysis?
     @State private var isAnalyzing = false
     @State private var analysisError: String?
+    @State private var selectedImageIndex = 0
+
+    private var currentPatent: Patent {
+        enrichedPatent ?? patent
+    }
 
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 24) {
-                // Header Image
-                headerImage
+                // Header Image Gallery
+                imageGallery
 
                 VStack(alignment: .leading, spacing: 20) {
                     // Title & Category
@@ -21,10 +28,27 @@ struct PatentDetailView: View {
                     // Quick Stats
                     statsRow
 
+                    // Patent Numbers (if available)
+                    if let patentNumbers = currentPatent.patentNumbers, !patentNumbers.isEmpty {
+                        patentNumbersSection(patentNumbers)
+                    }
+
                     Divider()
 
                     // Description
                     descriptionSection
+
+                    // Benefits (if available)
+                    if let benefits = currentPatent.benefits, !benefits.isEmpty {
+                        Divider()
+                        benefitsSection(benefits)
+                    }
+
+                    // Applications (if available)
+                    if let applications = currentPatent.applications, !applications.isEmpty {
+                        Divider()
+                        applicationsSection(applications)
+                    }
 
                     Divider()
 
@@ -35,6 +59,12 @@ struct PatentDetailView: View {
 
                     // Licensing Info
                     licensingSection
+
+                    // Related Technologies (if available)
+                    if let related = currentPatent.relatedTechnologies, !related.isEmpty {
+                        Divider()
+                        relatedTechnologiesSection(related)
+                    }
 
                     // Links
                     linksSection
@@ -55,35 +85,52 @@ struct PatentDetailView: View {
         }
         .sheet(isPresented: $showAnalysis) {
             if let analysis = analysis {
-                BusinessAnalysisView(analysis: analysis, patent: patent)
+                BusinessAnalysisView(analysis: analysis, patent: currentPatent)
             }
+        }
+        .task {
+            await loadExtendedDetails()
         }
     }
 
     // MARK: - Views
 
-    private var headerImage: some View {
+    private var imageGallery: some View {
         ZStack {
-            if let imageURL = patent.imageURL, let url = URL(string: imageURL) {
-                AsyncImage(url: url) { phase in
-                    switch phase {
-                    case .success(let image):
-                        image
-                            .resizable()
-                            .aspectRatio(contentMode: .fill)
-                    case .failure:
-                        headerPlaceholder
-                    case .empty:
-                        ProgressView()
-                    @unknown default:
-                        headerPlaceholder
+            let images = currentPatent.allImages
+            if images.isEmpty {
+                headerPlaceholder
+            } else if images.count == 1 {
+                singleImage(url: images[0])
+            } else {
+                TabView(selection: $selectedImageIndex) {
+                    ForEach(Array(images.enumerated()), id: \.offset) { index, imageURL in
+                        singleImage(url: imageURL)
+                            .tag(index)
                     }
                 }
-            } else {
-                headerPlaceholder
+                .tabViewStyle(.page(indexDisplayMode: .automatic))
+            }
+
+            // Loading indicator overlay
+            if isLoadingDetails {
+                VStack {
+                    Spacer()
+                    HStack {
+                        ProgressView()
+                            .tint(.white)
+                        Text("Loading details...")
+                            .font(.caption)
+                            .foregroundStyle(.white)
+                    }
+                    .padding(8)
+                    .background(.black.opacity(0.6))
+                    .clipShape(Capsule())
+                    .padding(.bottom, 8)
+                }
             }
         }
-        .frame(height: 200)
+        .frame(height: 220)
         .frame(maxWidth: .infinity)
         .background(
             LinearGradient(
@@ -95,9 +142,26 @@ struct PatentDetailView: View {
         .clipped()
     }
 
+    private func singleImage(url: String) -> some View {
+        AsyncImage(url: URL(string: url)) { phase in
+            switch phase {
+            case .success(let image):
+                image
+                    .resizable()
+                    .aspectRatio(contentMode: .fill)
+            case .failure:
+                headerPlaceholder
+            case .empty:
+                ProgressView()
+            @unknown default:
+                headerPlaceholder
+            }
+        }
+    }
+
     private var headerPlaceholder: some View {
         VStack(spacing: 12) {
-            Image(systemName: patent.categoryIcon)
+            Image(systemName: currentPatent.categoryIcon)
                 .font(.system(size: 60))
             Text("NASA Technology")
                 .font(.caption)
@@ -108,13 +172,13 @@ struct PatentDetailView: View {
     private var titleSection: some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack {
-                Image(systemName: patent.categoryIcon)
-                Text(patent.category)
+                Image(systemName: currentPatent.categoryIcon)
+                Text(currentPatent.category)
             }
             .font(.subheadline)
             .foregroundStyle(.blue)
 
-            Text(patent.title)
+            Text(currentPatent.title)
                 .font(.title2.bold())
         }
     }
@@ -124,10 +188,10 @@ struct PatentDetailView: View {
             StatItem(
                 icon: "building.columns",
                 label: "Center",
-                value: patent.center ?? "NASA"
+                value: currentPatent.center ?? "NASA"
             )
 
-            if let trl = patent.trl {
+            if let trl = currentPatent.trl {
                 StatItem(
                     icon: "chart.bar",
                     label: "TRL",
@@ -138,26 +202,126 @@ struct PatentDetailView: View {
             StatItem(
                 icon: "doc.text",
                 label: "Case",
-                value: patent.caseNumber.isEmpty ? "N/A" : String(patent.caseNumber.prefix(12))
+                value: currentPatent.caseNumber.isEmpty ? "N/A" : String(currentPatent.caseNumber.prefix(12))
             )
+        }
+    }
+
+    private func patentNumbersSection(_ numbers: [String]) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack {
+                Image(systemName: "doc.badge.gearshape")
+                    .foregroundStyle(.blue)
+                Text("USPTO Patents")
+                    .font(.subheadline.weight(.medium))
+            }
+
+            FlowLayout(spacing: 8) {
+                ForEach(numbers, id: \.self) { number in
+                    if let url = URL(string: "https://patents.google.com/patent/US\(number)") {
+                        Link(destination: url) {
+                            Text("US\(number)")
+                                .font(.caption)
+                                .padding(.horizontal, 10)
+                                .padding(.vertical, 6)
+                                .background(Color.blue.opacity(0.1))
+                                .foregroundStyle(.blue)
+                                .clipShape(Capsule())
+                        }
+                    } else {
+                        Text("US\(number)")
+                            .font(.caption)
+                            .padding(.horizontal, 10)
+                            .padding(.vertical, 6)
+                            .background(Color(.systemGray5))
+                            .clipShape(Capsule())
+                    }
+                }
+            }
         }
     }
 
     private var descriptionSection: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text("Description")
-                .font(.headline)
+            HStack {
+                Image(systemName: "text.alignleft")
+                    .foregroundStyle(.blue)
+                Text("Description")
+                    .font(.headline)
+            }
 
-            Text(patent.description)
+            Text(currentPatent.description)
                 .font(.body)
                 .foregroundStyle(.secondary)
         }
     }
 
+    private func benefitsSection(_ benefits: [String]) -> some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack {
+                Image(systemName: "checkmark.seal.fill")
+                    .foregroundStyle(.green)
+                Text("Benefits")
+                    .font(.headline)
+            }
+
+            VStack(alignment: .leading, spacing: 10) {
+                ForEach(benefits, id: \.self) { benefit in
+                    HStack(alignment: .top, spacing: 10) {
+                        Image(systemName: "checkmark.circle.fill")
+                            .foregroundStyle(.green)
+                            .font(.caption)
+                            .padding(.top, 3)
+                        Text(benefit)
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+            }
+        }
+    }
+
+    private func applicationsSection(_ applications: [PatentApplication]) -> some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack {
+                Image(systemName: "lightbulb.fill")
+                    .foregroundStyle(.orange)
+                Text("Applications")
+                    .font(.headline)
+            }
+
+            LazyVGrid(columns: [
+                GridItem(.flexible()),
+                GridItem(.flexible())
+            ], spacing: 10) {
+                ForEach(applications) { app in
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text(app.domain)
+                            .font(.subheadline.weight(.medium))
+                        if !app.description.isEmpty {
+                            Text(app.description)
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                                .lineLimit(3)
+                        }
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(10)
+                    .background(Color(.systemGray6))
+                    .clipShape(RoundedRectangle(cornerRadius: 8))
+                }
+            }
+        }
+    }
+
     private var analysisSection: some View {
         VStack(alignment: .leading, spacing: 16) {
-            Text("Business Potential")
-                .font(.headline)
+            HStack {
+                Image(systemName: "sparkles")
+                    .foregroundStyle(.purple)
+                Text("Business Potential")
+                    .font(.headline)
+            }
 
             if let error = analysisError {
                 HStack {
@@ -206,8 +370,12 @@ struct PatentDetailView: View {
 
     private var licensingSection: some View {
         VStack(alignment: .leading, spacing: 16) {
-            Text("Licensing Options")
-                .font(.headline)
+            HStack {
+                Image(systemName: "signature")
+                    .foregroundStyle(.blue)
+                Text("Licensing Options")
+                    .font(.headline)
+            }
 
             VStack(spacing: 12) {
                 LicenseOptionRow(
@@ -248,12 +416,71 @@ struct PatentDetailView: View {
         }
     }
 
+    private func relatedTechnologiesSection(_ related: [RelatedTechnology]) -> some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack {
+                Image(systemName: "link")
+                    .foregroundStyle(.blue)
+                Text("Related Technologies")
+                    .font(.headline)
+            }
+
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 12) {
+                    ForEach(related) { tech in
+                        NavigationLink {
+                            // Create a minimal patent for navigation
+                            PatentDetailView(patent: Patent(
+                                id: tech.id,
+                                title: tech.title,
+                                description: "",
+                                category: "",
+                                caseNumber: tech.caseNumber,
+                                patentNumber: nil,
+                                imageURL: tech.imageURL,
+                                center: nil,
+                                trl: nil,
+                                benefits: nil,
+                                applications: nil,
+                                patentNumbers: nil,
+                                caseNumbers: nil,
+                                imageURLs: nil,
+                                relatedTechnologies: nil,
+                                detailLoaded: false
+                            ))
+                        } label: {
+                            VStack(alignment: .leading, spacing: 6) {
+                                Text(tech.title)
+                                    .font(.caption)
+                                    .fontWeight(.medium)
+                                    .lineLimit(2)
+                                    .multilineTextAlignment(.leading)
+                                Text(tech.caseNumber)
+                                    .font(.caption2)
+                                    .foregroundStyle(.secondary)
+                            }
+                            .frame(width: 140, alignment: .leading)
+                            .padding(10)
+                            .background(Color(.systemGray6))
+                            .clipShape(RoundedRectangle(cornerRadius: 8))
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+            }
+        }
+    }
+
     private var linksSection: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text("More Information")
-                .font(.headline)
+            HStack {
+                Image(systemName: "link.circle")
+                    .foregroundStyle(.blue)
+                Text("More Information")
+                    .font(.headline)
+            }
 
-            if let usptoURL = patent.usptoURL {
+            if let usptoURL = currentPatent.usptoURL {
                 Link(destination: usptoURL) {
                     HStack {
                         Image(systemName: "doc.text.magnifyingglass")
@@ -265,7 +492,7 @@ struct PatentDetailView: View {
                 }
             }
 
-            if let portalURL = URL(string: "https://technology.nasa.gov/patent/\(patent.caseNumber)") {
+            if let portalURL = URL(string: "https://technology.nasa.gov/patent/\(currentPatent.caseNumber)") {
                 Link(destination: portalURL) {
                     HStack {
                         Image(systemName: "globe")
@@ -282,11 +509,30 @@ struct PatentDetailView: View {
 
     // MARK: - Actions
 
+    private func loadExtendedDetails() async {
+        guard !patent.detailLoaded else {
+            isLoadingDetails = false
+            return
+        }
+
+        do {
+            let detailed = try await NASAAPI.shared.fetchPatentDetails(for: patent)
+            await MainActor.run {
+                enrichedPatent = detailed
+                isLoadingDetails = false
+            }
+        } catch {
+            await MainActor.run {
+                isLoadingDetails = false
+            }
+        }
+    }
+
     private func toggleSave() {
         if patentStore.isSaved(patent) {
             patentStore.removePatent(patent)
         } else {
-            patentStore.savePatent(patent)
+            patentStore.savePatent(currentPatent)
         }
     }
 
@@ -295,7 +541,7 @@ struct PatentDetailView: View {
         analysisError = nil
 
         do {
-            analysis = try await AIService.shared.analyzePatent(patent)
+            analysis = try await AIService.shared.analyzePatent(currentPatent)
             showAnalysis = true
         } catch {
             analysisError = error.localizedDescription
@@ -368,6 +614,51 @@ struct LicenseOptionRow: View {
     }
 }
 
+// MARK: - Flow Layout for Tags
+
+struct FlowLayout: Layout {
+    var spacing: CGFloat = 8
+
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+        let result = FlowResult(in: proposal.width ?? 0, subviews: subviews, spacing: spacing)
+        return result.size
+    }
+
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+        let result = FlowResult(in: bounds.width, subviews: subviews, spacing: spacing)
+        for (index, subview) in subviews.enumerated() {
+            subview.place(at: CGPoint(x: bounds.minX + result.positions[index].x,
+                                       y: bounds.minY + result.positions[index].y),
+                          proposal: .unspecified)
+        }
+    }
+
+    struct FlowResult {
+        var size: CGSize = .zero
+        var positions: [CGPoint] = []
+
+        init(in maxWidth: CGFloat, subviews: Subviews, spacing: CGFloat) {
+            var x: CGFloat = 0
+            var y: CGFloat = 0
+            var rowHeight: CGFloat = 0
+
+            for subview in subviews {
+                let size = subview.sizeThatFits(.unspecified)
+                if x + size.width > maxWidth && x > 0 {
+                    x = 0
+                    y += rowHeight + spacing
+                    rowHeight = 0
+                }
+                positions.append(CGPoint(x: x, y: y))
+                rowHeight = max(rowHeight, size.height)
+                x += size.width + spacing
+            }
+
+            self.size = CGSize(width: maxWidth, height: y + rowHeight)
+        }
+    }
+}
+
 #Preview {
     NavigationStack {
         PatentDetailView(patent: Patent(
@@ -375,11 +666,18 @@ struct LicenseOptionRow: View {
             title: "Advanced Composite Materials for Aerospace Applications",
             description: "A novel composite material system designed for extreme temperature environments in aerospace applications. This technology enables lightweight structures that can withstand temperatures exceeding 2000 degrees Fahrenheit while maintaining structural integrity.",
             category: "Materials",
-            caseNumber: "ARC-14653-2",
+            caseNumber: "LAR-TOPS-95",
             patentNumber: "US9876543",
             imageURL: nil,
-            center: "Ames Research Center",
-            trl: "6"
+            center: "Langley Research Center",
+            trl: "6",
+            benefits: ["High temperature resistance", "Lightweight design", "Superior strength"],
+            applications: [PatentApplication(domain: "Aerospace", description: "Aircraft structures")],
+            patentNumbers: ["9876543", "8765432"],
+            caseNumbers: nil,
+            imageURLs: nil,
+            relatedTechnologies: nil,
+            detailLoaded: true
         ))
         .environmentObject(PatentStore())
     }
