@@ -271,17 +271,24 @@ struct NativeVideoPlayerView: View {
 
         let newPlayer = AVPlayer(url: url)
 
-        // Check if video loads successfully
-        newPlayer.currentItem?.asset.loadValuesAsynchronously(forKeys: ["playable"]) {
-            DispatchQueue.main.async {
-                var error: NSError?
-                let status = newPlayer.currentItem?.asset.statusOfValue(forKey: "playable", error: &error)
+        // Check if video loads successfully using modern async API
+        Task {
+            do {
+                let asset = newPlayer.currentItem?.asset
+                let isPlayable = try await asset?.load(.isPlayable) ?? false
 
-                if status == .loaded {
-                    self.player = newPlayer
-                    self.isLoading = false
-                    newPlayer.play()
-                } else {
+                await MainActor.run {
+                    if isPlayable {
+                        self.player = newPlayer
+                        self.isLoading = false
+                        newPlayer.play()
+                    } else {
+                        self.hasError = true
+                        self.isLoading = false
+                    }
+                }
+            } catch {
+                await MainActor.run {
                     self.hasError = true
                     self.isLoading = false
                 }
@@ -289,7 +296,7 @@ struct NativeVideoPlayerView: View {
         }
 
         // Fallback: show player after short delay if async check takes too long
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
             if self.player == nil && !self.hasError {
                 self.player = newPlayer
                 self.isLoading = false
