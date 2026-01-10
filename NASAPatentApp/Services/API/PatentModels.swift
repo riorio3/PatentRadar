@@ -38,6 +38,24 @@ struct Patent: Identifiable, Codable, Hashable {
     }
 }
 
+// MARK: - Media Item (for unified image/video handling)
+enum MediaItem: Identifiable {
+    case image(String)
+    case video(String)
+
+    var id: String {
+        switch self {
+        case .image(let url): return "img_\(url)"
+        case .video(let url): return "vid_\(url)"
+        }
+    }
+
+    var isVideo: Bool {
+        if case .video = self { return true }
+        return false
+    }
+}
+
 // MARK: - Patent Detail (Rich - from page scraping)
 struct PatentDetail: Identifiable {
     let id: String
@@ -47,11 +65,16 @@ struct PatentDetail: Identifiable {
     let benefits: [String]
     let applications: [String]
     let images: [String]
+    let videos: [String]
     let patentNumbers: [String]
     let relatedTechnologies: [String]
 
     var hasRichContent: Bool {
         !benefits.isEmpty || !applications.isEmpty || images.count > 1 || !patentNumbers.isEmpty
+    }
+
+    var hasMedia: Bool {
+        !images.isEmpty || !videos.isEmpty
     }
 }
 

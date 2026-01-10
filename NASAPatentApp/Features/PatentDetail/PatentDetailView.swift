@@ -10,8 +10,12 @@ struct PatentDetailView: View {
 
     // Rich detail state
     @State private var detail: PatentDetail?
-    @State private var isLoadingDetail = true
-    @State private var selectedImageIndex = 0
+    @State private var selectedMediaIndex = 0
+
+    // Full screen media states
+    @State private var showFullScreenImage = false
+    @State private var showVideoPlayer = false
+    @State private var selectedVideoURL: String?
 
     var body: some View {
         ScrollView {
@@ -80,61 +84,74 @@ struct PatentDetailView: View {
                 BusinessAnalysisView(analysis: analysis, patent: patent)
             }
         }
+        .fullScreenCover(isPresented: $showFullScreenImage) {
+            FullScreenImageViewer(
+                images: mediaImages,
+                selectedIndex: $selectedMediaIndex,
+                isPresented: $showFullScreenImage
+            )
+        }
+        .fullScreenCover(isPresented: $showVideoPlayer) {
+            if let videoURL = selectedVideoURL {
+                VideoPlayerView(videoURL: videoURL, isPresented: $showVideoPlayer)
+            }
+        }
         .task {
             await loadDetail()
         }
     }
 
+    // MARK: - Computed Media Arrays
+
+    private var mediaImages: [String] {
+        detail?.images ?? (patent.imageURL.map { [$0] } ?? [])
+    }
+
+    private var mediaVideos: [String] {
+        detail?.videos ?? []
+    }
+
+    private var allMedia: [MediaItem] {
+        var items: [MediaItem] = mediaImages.map { .image($0) }
+        items.append(contentsOf: mediaVideos.map { .video($0) })
+        return items
+    }
+
     // MARK: - Load Detail
 
     private func loadDetail() async {
-        guard !patent.caseNumber.isEmpty else {
-            isLoadingDetail = false
-            return
-        }
+        guard !patent.caseNumber.isEmpty else { return }
 
         do {
             detail = try await NASAAPI.shared.getPatentDetail(caseNumber: patent.caseNumber)
         } catch {
             // Silently fail - we still have basic data
         }
-        isLoadingDetail = false
     }
 
-    // MARK: - Image Gallery
+    // MARK: - Media Gallery
 
     private var imageGallery: some View {
-        let images = detail?.images ?? (patent.imageURL.map { [$0] } ?? [])
+        let media = allMedia
 
         return VStack(spacing: 8) {
-            // Main Image
-            TabView(selection: $selectedImageIndex) {
-                if images.isEmpty {
+            // Main Media Carousel
+            TabView(selection: $selectedMediaIndex) {
+                if media.isEmpty {
                     headerPlaceholder
                         .tag(0)
                 } else {
-                    ForEach(Array(images.enumerated()), id: \.offset) { index, urlString in
-                        if let url = URL(string: urlString) {
-                            AsyncImage(url: url) { phase in
-                                switch phase {
-                                case .success(let image):
-                                    image
-                                        .resizable()
-                                        .aspectRatio(contentMode: .fill)
-                                case .failure:
-                                    headerPlaceholder
-                                case .empty:
-                                    ProgressView()
-                                @unknown default:
-                                    headerPlaceholder
-                                }
-                            }
-                            .tag(index)
+                    ForEach(Array(media.enumerated()), id: \.offset) { index, item in
+                        switch item {
+                        case .image(let urlString):
+                            imageSlide(urlString: urlString, index: index)
+                        case .video(let urlString):
+                            videoSlide(urlString: urlString, index: index)
                         }
                     }
                 }
             }
-            .tabViewStyle(.page(indexDisplayMode: images.count > 1 ? .automatic : .never))
+            .tabViewStyle(.page(indexDisplayMode: media.count > 1 ? .automatic : .never))
             .frame(height: 220)
             .background(
                 LinearGradient(
@@ -145,13 +162,65 @@ struct PatentDetailView: View {
             )
             .clipped()
 
-            // Image count indicator
-            if images.count > 1 {
-                Text("\(selectedImageIndex + 1) of \(images.count) images")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+            // Media count indicator
+            if media.count > 1 {
+                HStack(spacing: 4) {
+                    if allMedia[safe: selectedMediaIndex]?.isVideo == true {
+                        Image(systemName: "video.fill")
+                            .font(.caption2)
+                    } else {
+                        Image(systemName: "photo")
+                            .font(.caption2)
+                    }
+                    Text("\(selectedMediaIndex + 1) of \(media.count)")
+                }
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            }
+
+            // Tap hint
+            if !mediaImages.isEmpty {
+                Text("Tap image to zoom")
+                    .font(.caption2)
+                    .foregroundStyle(.tertiary)
             }
         }
+    }
+
+    private func imageSlide(urlString: String, index: Int) -> some View {
+        Button {
+            selectedMediaIndex = index
+            showFullScreenImage = true
+        } label: {
+            if let url = URL(string: urlString) {
+                AsyncImage(url: url) { phase in
+                    switch phase {
+                    case .success(let image):
+                        image
+                            .resizable()
+                            .aspectRatio(contentMode: .fill)
+                    case .failure:
+                        headerPlaceholder
+                    case .empty:
+                        ProgressView()
+                    @unknown default:
+                        headerPlaceholder
+                    }
+                }
+            } else {
+                headerPlaceholder
+            }
+        }
+        .buttonStyle(.plain)
+        .tag(index)
+    }
+
+    private func videoSlide(urlString: String, index: Int) -> some View {
+        VideoThumbnailView(videoURL: urlString) {
+            selectedVideoURL = urlString
+            showVideoPlayer = true
+        }
+        .tag(index)
     }
 
     private var headerPlaceholder: some View {
@@ -567,6 +636,14 @@ struct LicenseOptionRow: View {
         .padding()
         .background(highlight ? Color.blue.opacity(0.05) : Color(.systemGray6))
         .clipShape(RoundedRectangle(cornerRadius: 10))
+    }
+}
+
+// MARK: - Safe Array Subscript
+
+extension Array {
+    subscript(safe index: Int) -> Element? {
+        indices.contains(index) ? self[index] : nil
     }
 }
 

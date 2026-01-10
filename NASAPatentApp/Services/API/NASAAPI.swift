@@ -111,6 +111,20 @@ class NASAAPI {
         // Extract all images (full size, not thumbnails)
         let images = extractMatches(from: html, pattern: "src=\"(https://technology\\.nasa\\.gov/t2media/tops/img/[^\"]+)\"")
 
+        // Extract video URLs (mp4, YouTube, Vimeo)
+        var videos: [String] = []
+        // Direct video files
+        videos.append(contentsOf: extractMatches(from: html, pattern: "src=\"(https://[^\"]+\\.mp4)\""))
+        videos.append(contentsOf: extractMatches(from: html, pattern: "src=\"(https://technology\\.nasa\\.gov/t2media/[^\"]+\\.mp4)\""))
+        // YouTube embeds
+        let youtubeEmbeds = extractMatches(from: html, pattern: "src=\"(https://www\\.youtube\\.com/embed/[^\"?]+)")
+        videos.append(contentsOf: youtubeEmbeds.map { "https://www.youtube.com/watch?v=" + $0.replacingOccurrences(of: "https://www.youtube.com/embed/", with: "") })
+        // YouTube links
+        videos.append(contentsOf: extractMatches(from: html, pattern: "href=\"(https://(?:www\\.)?youtube\\.com/watch\\?v=[^\"&]+)"))
+        videos.append(contentsOf: extractMatches(from: html, pattern: "href=\"(https://youtu\\.be/[^\"]+)\""))
+        // Remove duplicates
+        videos = Array(Set(videos))
+
         // Extract patent numbers
         let patentNumbers = extractMatches(from: html, pattern: ">([0-9,D][0-9,]+)</a>")
             .map { $0.replacingOccurrences(of: ",", with: "") }
@@ -128,6 +142,7 @@ class NASAAPI {
             benefits: benefits,
             applications: applications,
             images: images,
+            videos: videos,
             patentNumbers: patentNumbers,
             relatedTechnologies: related
         )
