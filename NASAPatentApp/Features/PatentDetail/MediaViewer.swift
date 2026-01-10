@@ -156,29 +156,17 @@ struct VideoPlayerView: View {
     let videoURL: String
     @Binding var isPresented: Bool
 
-    @State private var player: AVPlayer?
-
     var body: some View {
         ZStack {
             Color.black.ignoresSafeArea()
 
             if isYouTubeURL(videoURL) {
-                // YouTube - open in Safari or show web view
-                YouTubePlayerView(urlString: videoURL)
-            } else if let url = URL(string: videoURL) {
-                // Native video player for mp4
-                VideoPlayer(player: player)
-                    .onAppear {
-                        player = AVPlayer(url: url)
-                        player?.play()
-                    }
-                    .onDisappear {
-                        player?.pause()
-                        player = nil
-                    }
+                YouTubePlayerView(urlString: videoURL, isPresented: $isPresented)
+            } else {
+                NativeVideoPlayerView(urlString: videoURL)
             }
 
-            // Close button
+            // Close button overlay
             VStack {
                 HStack {
                     Spacer()
@@ -186,8 +174,9 @@ struct VideoPlayerView: View {
                         isPresented = false
                     } label: {
                         Image(systemName: "xmark.circle.fill")
-                            .font(.title)
-                            .foregroundStyle(.white.opacity(0.8))
+                            .font(.system(size: 32))
+                            .foregroundStyle(.white)
+                            .shadow(color: .black.opacity(0.5), radius: 4)
                             .padding()
                     }
                 }
@@ -201,36 +190,171 @@ struct VideoPlayerView: View {
     }
 }
 
+// MARK: - Native Video Player (mp4)
+
+struct NativeVideoPlayerView: View {
+    let urlString: String
+
+    @State private var player: AVPlayer?
+    @State private var isLoading = true
+    @State private var hasError = false
+
+    var body: some View {
+        Group {
+            if hasError {
+                VStack(spacing: 16) {
+                    Image(systemName: "exclamationmark.triangle")
+                        .font(.system(size: 50))
+                        .foregroundStyle(.orange)
+                    Text("Unable to load video")
+                        .font(.headline)
+                        .foregroundStyle(.white)
+                    if let url = URL(string: urlString) {
+                        Link(destination: url) {
+                            HStack {
+                                Image(systemName: "arrow.up.right")
+                                Text("Open in Browser")
+                            }
+                            .font(.subheadline)
+                            .foregroundStyle(.blue)
+                        }
+                    }
+                }
+            } else if let player = player {
+                VideoPlayer(player: player)
+                    .onDisappear {
+                        player.pause()
+                    }
+            } else {
+                ProgressView()
+                    .scaleEffect(1.5)
+                    .tint(.white)
+            }
+        }
+        .onAppear {
+            loadVideo()
+        }
+    }
+
+    private func loadVideo() {
+        guard let url = URL(string: urlString) else {
+            hasError = true
+            return
+        }
+
+        let newPlayer = AVPlayer(url: url)
+
+        // Check if video loads successfully
+        newPlayer.currentItem?.asset.loadValuesAsynchronously(forKeys: ["playable"]) {
+            DispatchQueue.main.async {
+                var error: NSError?
+                let status = newPlayer.currentItem?.asset.statusOfValue(forKey: "playable", error: &error)
+
+                if status == .loaded {
+                    self.player = newPlayer
+                    self.isLoading = false
+                    newPlayer.play()
+                } else {
+                    self.hasError = true
+                    self.isLoading = false
+                }
+            }
+        }
+
+        // Fallback: show player after short delay if async check takes too long
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+            if self.player == nil && !self.hasError {
+                self.player = newPlayer
+                self.isLoading = false
+                newPlayer.play()
+            }
+        }
+    }
+}
+
 // MARK: - YouTube Web Player
 
 struct YouTubePlayerView: View {
     let urlString: String
+    @Binding var isPresented: Bool
+
+    @Environment(\.openURL) private var openURL
 
     var body: some View {
-        VStack(spacing: 20) {
-            Image(systemName: "play.rectangle.fill")
-                .font(.system(size: 60))
-                .foregroundStyle(.red)
+        VStack(spacing: 24) {
+            // YouTube thumbnail
+            if let thumbnailURL = youTubeThumbnailURL(urlString) {
+                AsyncImage(url: thumbnailURL) { phase in
+                    switch phase {
+                    case .success(let image):
+                        image
+                            .resizable()
+                            .aspectRatio(16/9, contentMode: .fit)
+                            .clipShape(RoundedRectangle(cornerRadius: 12))
+                            .overlay(
+                                Image(systemName: "play.circle.fill")
+                                    .font(.system(size: 70))
+                                    .foregroundStyle(.white)
+                                    .shadow(color: .black.opacity(0.5), radius: 8)
+                            )
+                    default:
+                        RoundedRectangle(cornerRadius: 12)
+                            .fill(Color.gray.opacity(0.3))
+                            .aspectRatio(16/9, contentMode: .fit)
+                            .overlay(
+                                Image(systemName: "play.rectangle.fill")
+                                    .font(.system(size: 60))
+                                    .foregroundStyle(.red)
+                            )
+                    }
+                }
+                .frame(maxWidth: 350)
+            } else {
+                Image(systemName: "play.rectangle.fill")
+                    .font(.system(size: 80))
+                    .foregroundStyle(.red)
+            }
 
             Text("YouTube Video")
-                .font(.headline)
+                .font(.title2.bold())
                 .foregroundStyle(.white)
 
             if let url = URL(string: urlString) {
-                Link(destination: url) {
+                Button {
+                    openURL(url)
+                    // Close the viewer after opening YouTube
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+                        isPresented = false
+                    }
+                } label: {
                     HStack {
-                        Image(systemName: "arrow.up.right")
-                        Text("Open in YouTube")
+                        Image(systemName: "play.fill")
+                        Text("Watch on YouTube")
                     }
                     .font(.headline)
                     .foregroundStyle(.white)
-                    .padding(.horizontal, 24)
-                    .padding(.vertical, 12)
+                    .padding(.horizontal, 28)
+                    .padding(.vertical, 14)
                     .background(Color.red)
                     .clipShape(Capsule())
                 }
             }
+
+            Text("Tap to open in YouTube app")
+                .font(.caption)
+                .foregroundStyle(.gray)
         }
+    }
+
+    private func youTubeThumbnailURL(_ url: String) -> URL? {
+        var videoID: String?
+        if url.contains("youtube.com/watch?v=") {
+            videoID = url.components(separatedBy: "v=").last?.components(separatedBy: "&").first
+        } else if url.contains("youtu.be/") {
+            videoID = url.components(separatedBy: "youtu.be/").last?.components(separatedBy: "?").first
+        }
+        guard let id = videoID else { return nil }
+        return URL(string: "https://img.youtube.com/vi/\(id)/hqdefault.jpg")
     }
 }
 
