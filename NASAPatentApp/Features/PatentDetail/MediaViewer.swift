@@ -221,87 +221,71 @@ struct VideoPlayerView: View {
 
 struct NativeVideoPlayerView: View {
     let urlString: String
-
-    @State private var player: AVPlayer?
-    @State private var isLoading = true
-    @State private var hasError = false
+    @Environment(\.openURL) private var openURL
 
     var body: some View {
         Group {
-            if hasError {
-                VStack(spacing: 16) {
-                    Image(systemName: "exclamationmark.triangle")
-                        .font(.system(size: 50))
-                        .foregroundStyle(.orange)
-                    Text("Unable to load video")
-                        .font(.headline)
-                        .foregroundStyle(.white)
-                    if let url = URL(string: urlString) {
-                        Link(destination: url) {
-                            HStack {
-                                Image(systemName: "arrow.up.right")
-                                Text("Open in Browser")
-                            }
-                            .font(.subheadline)
-                            .foregroundStyle(.blue)
-                        }
-                    }
-                }
-            } else if let player = player {
-                VideoPlayer(player: player)
-                    .onDisappear {
-                        player.pause()
-                    }
+            if let url = URL(string: urlString) {
+                SimpleVideoPlayer(url: url)
             } else {
-                ProgressView()
-                    .scaleEffect(1.5)
-                    .tint(.white)
+                errorView
             }
-        }
-        .onAppear {
-            loadVideo()
         }
     }
 
-    private func loadVideo() {
-        guard let url = URL(string: urlString) else {
-            hasError = true
-            return
+    private var errorView: some View {
+        VStack(spacing: 16) {
+            Image(systemName: "exclamationmark.triangle")
+                .font(.system(size: 50))
+                .foregroundStyle(.orange)
+            Text("Invalid video URL")
+                .font(.headline)
+                .foregroundStyle(.white)
         }
+    }
+}
 
-        let newPlayer = AVPlayer(url: url)
+// Simple wrapper that creates player on init
+struct SimpleVideoPlayer: View {
+    let url: URL
+    @State private var player: AVPlayer?
+    @Environment(\.openURL) private var openURL
 
-        // Check if video loads successfully using modern async API
-        Task {
-            do {
-                let asset = newPlayer.currentItem?.asset
-                let isPlayable = try await asset?.load(.isPlayable) ?? false
-
-                await MainActor.run {
-                    if isPlayable {
-                        self.player = newPlayer
-                        self.isLoading = false
-                        newPlayer.play()
-                    } else {
-                        self.hasError = true
-                        self.isLoading = false
+    var body: some View {
+        ZStack {
+            if let player = player {
+                VideoPlayer(player: player)
+                    .onDisappear {
+                        player.pause()
+                        player.replaceCurrentItem(with: nil)
                     }
-                }
-            } catch {
-                await MainActor.run {
-                    self.hasError = true
-                    self.isLoading = false
+            } else {
+                VStack(spacing: 20) {
+                    ProgressView()
+                        .scaleEffect(1.5)
+                        .tint(.white)
+                    Text("Loading video...")
+                        .foregroundStyle(.white.opacity(0.7))
+
+                    Button {
+                        openURL(url)
+                    } label: {
+                        HStack {
+                            Image(systemName: "safari")
+                            Text("Open in Browser")
+                        }
+                        .font(.subheadline)
+                        .foregroundStyle(.blue)
+                    }
+                    .padding(.top, 20)
                 }
             }
         }
-
-        // Fallback: show player after short delay if async check takes too long
-        DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
-            if self.player == nil && !self.hasError {
-                self.player = newPlayer
-                self.isLoading = false
-                newPlayer.play()
-            }
+        .onAppear {
+            // Create player immediately
+            let avPlayer = AVPlayer(url: url)
+            avPlayer.play()
+            player = avPlayer
         }
     }
 }
