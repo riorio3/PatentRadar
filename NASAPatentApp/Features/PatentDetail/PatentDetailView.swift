@@ -10,6 +10,7 @@ struct PatentDetailView: View {
 
     // Rich detail state
     @State private var detail: PatentDetail?
+    @State private var isLoadingDetail = true
     @State private var selectedMediaIndex = 0
 
     // Full screen media states
@@ -121,12 +122,22 @@ struct PatentDetailView: View {
     // MARK: - Load Detail
 
     private func loadDetail() async {
-        guard !patent.caseNumber.isEmpty else { return }
+        guard !patent.caseNumber.isEmpty else {
+            isLoadingDetail = false
+            return
+        }
 
         do {
-            detail = try await NASAAPI.shared.getPatentDetail(caseNumber: patent.caseNumber)
+            let fetchedDetail = try await NASAAPI.shared.getPatentDetail(caseNumber: patent.caseNumber)
+            withAnimation(.easeInOut(duration: 0.3)) {
+                detail = fetchedDetail
+                isLoadingDetail = false
+            }
         } catch {
             // Silently fail - we still have basic data
+            withAnimation {
+                isLoadingDetail = false
+            }
         }
     }
 
@@ -320,9 +331,31 @@ struct PatentDetailView: View {
             Text("Description")
                 .font(.headline)
 
-            Text(detail?.fullDescription.isEmpty == false ? detail!.fullDescription : patent.description)
-                .font(.body)
-                .foregroundStyle(.secondary)
+            if isLoadingDetail {
+                // Rocket loading animation while fetching full description
+                HStack {
+                    Spacer()
+                    VStack(spacing: 12) {
+                        Image(systemName: "airplane")
+                            .font(.system(size: 32))
+                            .foregroundStyle(.blue)
+                            .rotationEffect(.degrees(-45))
+                        Text("Loading details...")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                    .padding(.vertical, 20)
+                    Spacer()
+                }
+            } else {
+                let displayDescription = (detail?.fullDescription.isEmpty == false)
+                    ? detail!.fullDescription
+                    : patent.description
+
+                Text(displayDescription)
+                    .font(.body)
+                    .foregroundStyle(.secondary)
+            }
         }
     }
 

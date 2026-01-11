@@ -99,15 +99,27 @@ struct NASAPatentResponse: Codable {
 
             let id = array[0].stringValue ?? UUID().uuidString
             let caseNumber = array[1].stringValue ?? ""
-            let title = array[2].stringValue ?? "Untitled"
+            var title = array[2].stringValue ?? "Untitled"
             var description = array[3].stringValue ?? ""
             let category = array[5].stringValue ?? "General"
             let center = array.count > 9 ? array[9].stringValue : nil
             let imageURL = array.count > 10 ? array[10].stringValue : nil
 
-            // Clean HTML tags from description
+            // Clean HTML tags from title and description
+            title = title
+                .replacingOccurrences(of: "<[^>]+>", with: "", options: .regularExpression)
+                .replacingOccurrences(of: "&amp;", with: "&")
+                .replacingOccurrences(of: "&quot;", with: "\"")
+                .replacingOccurrences(of: "&#039;", with: "'")
+                .replacingOccurrences(of: "&nbsp;", with: " ")
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+
             description = description
                 .replacingOccurrences(of: "<[^>]+>", with: "", options: .regularExpression)
+                .replacingOccurrences(of: "&amp;", with: "&")
+                .replacingOccurrences(of: "&quot;", with: "\"")
+                .replacingOccurrences(of: "&#039;", with: "'")
+                .replacingOccurrences(of: "&nbsp;", with: " ")
                 .replacingOccurrences(of: "\\n", with: " ")
                 .trimmingCharacters(in: .whitespacesAndNewlines)
 

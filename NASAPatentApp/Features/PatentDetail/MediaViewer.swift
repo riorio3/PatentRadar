@@ -1,6 +1,5 @@
 import SwiftUI
 import AVKit
-import WebKit
 
 // MARK: - Full Screen Zoomable Image Viewer
 
@@ -8,11 +7,6 @@ struct FullScreenImageViewer: View {
     let images: [String]
     @Binding var selectedIndex: Int
     @Binding var isPresented: Bool
-
-    @State private var scale: CGFloat = 1.0
-    @State private var lastScale: CGFloat = 1.0
-    @State private var offset: CGSize = .zero
-    @State private var lastOffset: CGSize = .zero
 
     var body: some View {
         ZStack {
@@ -85,7 +79,6 @@ struct ZoomableImageView: View {
                             .contentShape(Rectangle())
                             .gesture(
                                 SimultaneousGesture(
-                                    // Pinch to zoom
                                     MagnificationGesture()
                                         .onChanged { value in
                                             let delta = value / lastScale
@@ -102,7 +95,6 @@ struct ZoomableImageView: View {
                                                 }
                                             }
                                         },
-                                    // Pan when zoomed
                                     DragGesture()
                                         .onChanged { value in
                                             if scale > 1 {
@@ -121,7 +113,6 @@ struct ZoomableImageView: View {
                                 )
                             )
                             .gesture(
-                                // Double tap to zoom
                                 TapGesture(count: 2)
                                     .onEnded {
                                         withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
@@ -157,11 +148,8 @@ struct ZoomableImageView: View {
             lastOffset = .zero
             return
         }
-
-        // Allow panning based on how much the image extends beyond the view
         let maxX = (size.width * (scale - 1)) / 2
         let maxY = (size.height * (scale - 1)) / 2
-
         offset.width = min(max(offset.width, -maxX), maxX)
         offset.height = min(max(offset.height, -maxY), maxY)
         lastOffset = offset
@@ -186,66 +174,89 @@ struct VideoPlayerView: View {
     @Environment(\.openURL) private var openURL
 
     var body: some View {
-        ZStack {
-            Color.black.ignoresSafeArea()
-
+        Group {
             if isYouTubeURL(videoURL) {
-                // YouTube - must open externally
+                // YouTube videos - show option to open externally
                 youTubeView
+            } else if let url = URL(string: videoURL) {
+                // Direct video files - use native AVPlayer
+                NativeVideoPlayer(url: url, isPresented: $isPresented)
+                    .ignoresSafeArea()
             } else {
-                // Direct video URL - play in app
-                InAppVideoPlayer(urlString: videoURL)
-            }
-
-            // Close button
-            VStack {
-                HStack {
-                    Spacer()
-                    Button {
-                        isPresented = false
-                    } label: {
-                        Image(systemName: "xmark.circle.fill")
-                            .font(.system(size: 32))
-                            .foregroundStyle(.white.opacity(0.8))
-                            .padding()
-                    }
-                }
-                Spacer()
+                errorView
             }
         }
     }
 
     private var youTubeView: some View {
-        VStack(spacing: 30) {
-            Image(systemName: "play.rectangle.fill")
-                .font(.system(size: 80))
-                .foregroundStyle(.red)
+        ZStack {
+            Color.black.ignoresSafeArea()
 
-            Text("YouTube Video")
-                .font(.title2.bold())
-                .foregroundStyle(.white)
+            VStack(spacing: 24) {
+                Image(systemName: "play.rectangle.fill")
+                    .font(.system(size: 80))
+                    .foregroundStyle(.red)
 
-            if let url = URL(string: videoURL) {
-                Button {
-                    openURL(url)
-                    isPresented = false
-                } label: {
-                    HStack {
-                        Image(systemName: "play.fill")
-                        Text("Watch on YouTube")
-                    }
-                    .font(.headline)
+                Text("YouTube Video")
+                    .font(.title2.bold())
                     .foregroundStyle(.white)
-                    .padding(.horizontal, 32)
-                    .padding(.vertical, 16)
-                    .background(Color.red)
-                    .clipShape(Capsule())
-                }
-            }
 
-            Text("Opens in YouTube app")
-                .font(.caption)
+                Text("YouTube videos open in the YouTube app or Safari")
+                    .font(.subheadline)
+                    .foregroundStyle(.gray)
+                    .multilineTextAlignment(.center)
+                    .padding(.horizontal)
+
+                if let url = URL(string: videoURL) {
+                    Button {
+                        openURL(url)
+                        isPresented = false
+                    } label: {
+                        HStack {
+                            Image(systemName: "play.fill")
+                            Text("Watch on YouTube")
+                        }
+                        .font(.headline)
+                        .foregroundStyle(.white)
+                        .padding(.horizontal, 32)
+                        .padding(.vertical, 16)
+                        .background(Color.red)
+                        .clipShape(Capsule())
+                    }
+                }
+
+                Button("Cancel") {
+                    isPresented = false
+                }
                 .foregroundStyle(.gray)
+                .padding(.top, 8)
+            }
+        }
+    }
+
+    private var errorView: some View {
+        ZStack {
+            Color.black.ignoresSafeArea()
+
+            VStack(spacing: 20) {
+                Image(systemName: "exclamationmark.triangle")
+                    .font(.system(size: 60))
+                    .foregroundStyle(.orange)
+
+                Text("Unable to Play Video")
+                    .font(.title2.bold())
+                    .foregroundStyle(.white)
+
+                Text("The video URL is invalid")
+                    .font(.subheadline)
+                    .foregroundStyle(.gray)
+
+                Button("Close") {
+                    isPresented = false
+                }
+                .foregroundStyle(.blue)
+                .padding(.top)
+            }
         }
     }
 
@@ -254,69 +265,46 @@ struct VideoPlayerView: View {
     }
 }
 
-// MARK: - In-App Video Player (WebView-based for better compatibility)
+// MARK: - Native Video Player (AVPlayerViewController)
 
-struct InAppVideoPlayer: View {
-    let urlString: String
+struct NativeVideoPlayer: UIViewControllerRepresentable {
+    let url: URL
+    @Binding var isPresented: Bool
 
-    var body: some View {
-        WebVideoPlayer(urlString: urlString)
-            .ignoresSafeArea()
-    }
-}
+    func makeUIViewController(context: Context) -> AVPlayerViewController {
+        let player = AVPlayer(url: url)
+        let controller = AVPlayerViewController()
+        controller.player = player
+        controller.delegate = context.coordinator
 
-// UIViewRepresentable wrapper for WKWebView video playback
-struct WebVideoPlayer: UIViewRepresentable {
-    let urlString: String
+        // Start playing automatically
+        player.play()
 
-    func makeUIView(context: Context) -> WKWebView {
-        let config = WKWebViewConfiguration()
-        config.allowsInlineMediaPlayback = true
-        config.mediaTypesRequiringUserActionForPlayback = []
-
-        let webView = WKWebView(frame: .zero, configuration: config)
-        webView.backgroundColor = .black
-        webView.isOpaque = false
-        webView.scrollView.backgroundColor = .black
-
-        return webView
+        return controller
     }
 
-    func updateUIView(_ webView: WKWebView, context: Context) {
-        // Create HTML that plays the video
-        let html = """
-        <!DOCTYPE html>
-        <html>
-        <head>
-            <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-            <style>
-                * { margin: 0; padding: 0; }
-                body {
-                    background: black;
-                    display: flex;
-                    justify-content: center;
-                    align-items: center;
-                    height: 100vh;
-                    overflow: hidden;
-                }
-                video {
-                    max-width: 100%;
-                    max-height: 100%;
-                    width: auto;
-                    height: auto;
-                }
-            </style>
-        </head>
-        <body>
-            <video controls autoplay playsinline>
-                <source src="\(urlString)" type="video/mp4">
-                Your browser does not support the video tag.
-            </video>
-        </body>
-        </html>
-        """
+    func updateUIViewController(_ uiViewController: AVPlayerViewController, context: Context) {
+        // No updates needed
+    }
 
-        webView.loadHTMLString(html, baseURL: URL(string: urlString)?.deletingLastPathComponent())
+    func makeCoordinator() -> Coordinator {
+        Coordinator(isPresented: $isPresented)
+    }
+
+    class Coordinator: NSObject, AVPlayerViewControllerDelegate {
+        @Binding var isPresented: Bool
+
+        init(isPresented: Binding<Bool>) {
+            _isPresented = isPresented
+        }
+
+        func playerViewController(
+            _ playerViewController: AVPlayerViewController,
+            willEndFullScreenPresentationWithAnimationCoordinator coordinator: any UIViewControllerTransitionCoordinator
+        ) {
+            // User dismissed the player
+            isPresented = false
+        }
     }
 }
 
@@ -354,6 +342,22 @@ struct VideoThumbnailView: View {
                             .foregroundStyle(.white)
                             .offset(x: 2)
                     )
+
+                // YouTube badge
+                if isYouTubeURL(videoURL) {
+                    VStack {
+                        HStack {
+                            Image(systemName: "play.rectangle.fill")
+                                .foregroundStyle(.red)
+                                .padding(6)
+                                .background(.black.opacity(0.7))
+                                .clipShape(RoundedRectangle(cornerRadius: 4))
+                            Spacer()
+                        }
+                        Spacer()
+                    }
+                    .padding(8)
+                }
             }
         }
         .buttonStyle(.plain)
@@ -381,7 +385,6 @@ struct VideoThumbnailView: View {
     }
 
     private func youTubeThumbnailURL(_ url: String) -> URL? {
-        // Extract video ID from YouTube URL
         var videoID: String?
 
         if url.contains("youtube.com/watch?v=") {
@@ -394,4 +397,3 @@ struct VideoThumbnailView: View {
         return URL(string: "https://img.youtube.com/vi/\(id)/hqdefault.jpg")
     }
 }
-
