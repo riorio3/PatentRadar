@@ -1,4 +1,5 @@
 import Foundation
+import SwiftUI
 
 // MARK: - Patent Model (Basic - from search API)
 struct Patent: Identifiable, Codable, Hashable {
@@ -221,6 +222,48 @@ enum PatentCategory: String, CaseIterable {
         case .propulsion: return "flame"
         case .robotics: return "gearshape.2"
         case .sensors: return "sensor.tag.radiowaves.forward"
+        }
+    }
+
+    var shortName: String {
+        switch self {
+        case .all: return "All"
+        case .aeronautics: return "Aero"
+        case .communications: return "Comms"
+        case .electronics: return "Electronics"
+        case .environment: return "Enviro"
+        case .health: return "Health"
+        case .information: return "Software"
+        case .instrumentation: return "Instrum"
+        case .manufacturing: return "Mfg"
+        case .materials: return "Materials"
+        case .mechanical: return "Mech"
+        case .optics: return "Optics"
+        case .power: return "Power"
+        case .propulsion: return "Propulsion"
+        case .robotics: return "Robotics"
+        case .sensors: return "Sensors"
+        }
+    }
+
+    var color: Color {
+        switch self {
+        case .all: return .blue
+        case .aeronautics: return .cyan
+        case .communications: return .purple
+        case .electronics: return .indigo
+        case .environment: return .green
+        case .health: return .red
+        case .information: return .teal
+        case .instrumentation: return .orange
+        case .manufacturing: return .brown
+        case .materials: return .mint
+        case .mechanical: return .gray
+        case .optics: return .pink
+        case .power: return .yellow
+        case .propulsion: return Color(.systemOrange)
+        case .robotics: return Color(.systemTeal)
+        case .sensors: return Color(.systemPurple)
         }
     }
 }

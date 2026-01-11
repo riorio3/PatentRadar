@@ -110,54 +110,36 @@ struct DiscoveryView: View {
 
     private var welcomeView: some View {
         VStack(spacing: 24) {
-            Image(systemName: "sparkles")
-                .font(.system(size: 64))
-                .foregroundStyle(.blue)
-
-            Text("Explore NASA Patents")
-                .font(.title2.bold())
-
-            Text("Search 1,400+ NASA technologies available for licensing. Find innovations that could power your next business.")
-                .foregroundStyle(.secondary)
-                .multilineTextAlignment(.center)
-
-            Button {
-                Task { await loadFeatured() }
-            } label: {
-                Label("Browse Featured Patents", systemImage: "star")
-            }
-            .buttonStyle(.borderedProminent)
-
-            // Quick category buttons
+            // Header
             VStack(spacing: 12) {
-                Text("Popular Categories")
+                Image(systemName: "sparkles")
+                    .font(.system(size: 48))
+                    .foregroundStyle(.blue)
+
+                Text("Explore NASA Patents")
+                    .font(.title2.bold())
+
+                Text("Search 1,400+ NASA technologies available for licensing")
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
+                    .multilineTextAlignment(.center)
+            }
 
-                HStack(spacing: 12) {
-                    QuickCategoryButton(title: "Robotics", icon: "gearshape.2") {
-                        selectedCategory = .robotics
-                        Task { await search() }
-                    }
-                    QuickCategoryButton(title: "Sensors", icon: "sensor.tag.radiowaves.forward") {
-                        selectedCategory = .sensors
-                        Task { await search() }
-                    }
-                }
-                HStack(spacing: 12) {
-                    QuickCategoryButton(title: "Materials", icon: "cube") {
-                        selectedCategory = .materials
-                        Task { await search() }
-                    }
-                    QuickCategoryButton(title: "Software", icon: "desktopcomputer") {
-                        selectedCategory = .information
-                        Task { await search() }
-                    }
+            // Category Grid
+            categoryGrid
+        }
+        .padding(.top, 20)
+    }
+
+    private var categoryGrid: some View {
+        LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 12), count: 4), spacing: 12) {
+            ForEach(PatentCategory.allCases, id: \.self) { category in
+                CategoryGridItem(category: category) {
+                    selectedCategory = category
+                    Task { await search() }
                 }
             }
-            .padding(.top, 8)
         }
-        .padding(.top, 40)
     }
 
     private var patentsGrid: some View {
@@ -211,6 +193,31 @@ struct DiscoveryView: View {
 
 // MARK: - Supporting Views
 
+struct CategoryGridItem: View {
+    let category: PatentCategory
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            VStack(spacing: 6) {
+                Image(systemName: category.icon)
+                    .font(.system(size: 24))
+                Text(category.shortName)
+                    .font(.caption2.weight(.medium))
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.8)
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .aspectRatio(1, contentMode: .fit)
+            .padding(8)
+            .background(category.color.opacity(0.15))
+            .foregroundStyle(category.color)
+            .clipShape(RoundedRectangle(cornerRadius: 12))
+        }
+        .buttonStyle(.plain)
+    }
+}
+
 struct CategoryPill: View {
     let category: PatentCategory
     let isSelected: Bool
@@ -221,36 +228,15 @@ struct CategoryPill: View {
             HStack(spacing: 6) {
                 Image(systemName: category.icon)
                     .font(.caption)
-                Text(category.displayName)
+                Text(category.shortName)
                     .font(.caption.weight(.medium))
             }
             .padding(.horizontal, 12)
             .padding(.vertical, 8)
-            .background(isSelected ? Color.blue : Color(.systemGray5))
+            .background(isSelected ? category.color : Color(.systemGray5))
             .foregroundStyle(isSelected ? .white : .primary)
             .clipShape(Capsule())
         }
-    }
-}
-
-struct QuickCategoryButton: View {
-    let title: String
-    let icon: String
-    let action: () -> Void
-
-    var body: some View {
-        Button(action: action) {
-            HStack {
-                Image(systemName: icon)
-                Text(title)
-            }
-            .font(.subheadline)
-            .frame(maxWidth: .infinity)
-            .padding(.vertical, 12)
-            .background(Color(.systemGray6))
-            .clipShape(RoundedRectangle(cornerRadius: 10))
-        }
-        .buttonStyle(.plain)
     }
 }
 
