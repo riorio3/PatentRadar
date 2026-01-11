@@ -37,6 +37,17 @@ struct DiscoveryView: View {
                 .padding()
             }
             .navigationTitle("Discover Patents")
+            .toolbar {
+                if hasSearched || !patents.isEmpty {
+                    ToolbarItem(placement: .topBarLeading) {
+                        Button {
+                            goHome()
+                        } label: {
+                            Image(systemName: "square.grid.2x2")
+                        }
+                    }
+                }
+            }
             .searchable(text: $searchText, prompt: "Search NASA patents...")
             .onSubmit(of: .search) {
                 Task { await search() }
@@ -44,6 +55,18 @@ struct DiscoveryView: View {
             .refreshable {
                 await search()
             }
+        }
+    }
+
+    // MARK: - Navigation
+
+    private func goHome() {
+        withAnimation {
+            patents = []
+            hasSearched = false
+            searchText = ""
+            selectedCategory = .all
+            errorMessage = nil
         }
     }
 
