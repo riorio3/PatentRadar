@@ -4,6 +4,10 @@ import SwiftUI
 struct NASAPatentApp: App {
     @StateObject private var patentStore = PatentStore()
 
+    init() {
+        // App initialization
+    }
+
     var body: some Scene {
         WindowGroup {
             ContentView()

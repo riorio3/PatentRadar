@@ -138,6 +138,41 @@ struct NASAPatentResponse: Codable {
     }
 }
 
+// MARK: - ElasticSearch API Response (used by website)
+struct ElasticSearchResult: Codable {
+    let id: String
+    let source: ElasticSearchSource
+
+    enum CodingKeys: String, CodingKey {
+        case id = "_id"
+        case source = "_source"
+    }
+}
+
+struct ElasticSearchSource: Codable {
+    let title: String?
+    let abstract: String?
+    let techDesc: String?
+    let category: String?
+    let clientRecordId: String?
+    let center: String?
+    let patentNumber: String?
+    let trl: String?
+    let img1: String?
+
+    enum CodingKeys: String, CodingKey {
+        case title
+        case abstract
+        case techDesc = "tech_desc"
+        case category
+        case clientRecordId = "client_record_id"
+        case center
+        case patentNumber = "patent_number"
+        case trl
+        case img1
+    }
+}
+
 // Helper to decode mixed JSON array values
 enum JSONValue: Codable {
     case string(String)
@@ -276,6 +311,28 @@ enum PatentCategory: String, CaseIterable {
         case .propulsion: return Color(.systemOrange)
         case .robotics: return Color(.systemTeal)
         case .sensors: return Color(.systemPurple)
+        }
+    }
+
+    // API category slugs - matches NASA Technology Transfer API
+    var apiSlug: String? {
+        switch self {
+        case .all: return nil
+        case .aeronautics: return "aerospace"
+        case .communications: return "communications"
+        case .electronics: return "electrical%20and%20electronics"
+        case .environment: return "environment"
+        case .health: return "health%20medicine%20and%20biotechnology"
+        case .information: return "information%20technology%20and%20software"
+        case .instrumentation: return "instrumentation"
+        case .manufacturing: return "manufacturing"
+        case .materials: return "materials%20and%20coatings"
+        case .mechanical: return "mechanical%20and%20fluid%20systems"
+        case .optics: return "optics"
+        case .power: return "power%20generation%20and%20storage"
+        case .propulsion: return "propulsion"
+        case .robotics: return "robotics%20automation%20and%20control"
+        case .sensors: return "sensors"
         }
     }
 }

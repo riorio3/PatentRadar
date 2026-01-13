@@ -144,7 +144,7 @@ struct DiscoveryView: View {
                 Text("Explore NASA Patents")
                     .font(.title2.bold())
 
-                Text("Search 1,400+ NASA technologies available for licensing")
+                Text("Search 600+ NASA patents available for licensing")
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
                     .multilineTextAlignment(.center)
@@ -184,36 +184,29 @@ struct DiscoveryView: View {
     // MARK: - Actions
 
     private func search() async {
+        print(">>> DiscoveryView.search() - selectedCategory: \(selectedCategory)")
+        print(">>> DiscoveryView.search() - searchText: '\(searchText)'")
+
         isLoading = true
         errorMessage = nil
         hasSearched = true
 
         do {
             if searchText.isEmpty {
+                print(">>> Calling browsePatents with: \(selectedCategory)")
                 patents = try await NASAAPI.shared.browsePatents(category: selectedCategory)
+                print(">>> Got \(patents.count) patents back")
             } else {
                 patents = try await NASAAPI.shared.searchPatents(query: searchText)
             }
         } catch {
+            print(">>> ERROR in search(): \(error)")
             errorMessage = error.localizedDescription
         }
 
         isLoading = false
     }
 
-    private func loadFeatured() async {
-        isLoading = true
-        errorMessage = nil
-        hasSearched = true
-
-        do {
-            patents = try await NASAAPI.shared.getFeaturedPatents()
-        } catch {
-            errorMessage = error.localizedDescription
-        }
-
-        isLoading = false
-    }
 }
 
 // MARK: - Supporting Views

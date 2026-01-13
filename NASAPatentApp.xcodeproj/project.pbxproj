@@ -21,6 +21,7 @@
 		A1000012 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = A2000012 /* Assets.xcassets */; };
 		A1000013 /* MediaViewer.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000013 /* MediaViewer.swift */; };
 		A1000014 /* ProblemSolverView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000014 /* ProblemSolverView.swift */; };
+		A1000015 /* ProblemHistoryStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000015 /* ProblemHistoryStore.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -38,6 +39,7 @@
 		A2000012 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		A2000013 /* MediaViewer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MediaViewer.swift; sourceTree = "<group>"; };
 		A2000014 /* ProblemSolverView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProblemSolverView.swift; sourceTree = "<group>"; };
+		A2000015 /* ProblemHistoryStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProblemHistoryStore.swift; sourceTree = "<group>"; };
 		A3000001 /* NASAPatentApp.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = NASAPatentApp.app; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
@@ -173,6 +175,7 @@
 			isa = PBXGroup;
 			children = (
 				A2000004 /* KeychainService.swift */,
+				A2000015 /* ProblemHistoryStore.swift */,
 			);
 			path = Storage;
 			sourceTree = "<group>";
@@ -259,6 +262,7 @@
 				A1000011 /* SettingsView.swift in Sources */,
 				A1000013 /* MediaViewer.swift in Sources */,
 				A1000014 /* ProblemSolverView.swift in Sources */,
+				A1000015 /* ProblemHistoryStore.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

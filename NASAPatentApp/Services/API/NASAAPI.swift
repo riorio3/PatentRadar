@@ -3,13 +3,161 @@ import Foundation
 class NASAAPI {
     static let shared = NASAAPI()
 
-    private let baseURL = "https://technology.nasa.gov/api/api"
+    private let baseURL = "https://technology.nasa.gov"
     private let session: URLSession
 
     private init() {
         let config = URLSessionConfiguration.default
         config.timeoutIntervalForRequest = 30
+        config.requestCachePolicy = .reloadIgnoringLocalAndRemoteCacheData
+        config.urlCache = nil
         session = URLSession(configuration: config)
+    }
+
+    // MARK: - Browse Patents by Category
+    func browsePatents(category: PatentCategory = .all) async throws -> [Patent] {
+        print(">>> browsePatents called with category: \(category)")
+
+        // Build the URL based on category
+        let slug: String
+        switch category {
+        case .all:
+            // For "all", fetch from multiple categories and combine
+            return try await fetchAllCategories()
+        case .aeronautics:
+            slug = "aerospace"
+        case .communications:
+            slug = "communications"
+        case .electronics:
+            slug = "electrical%20and%20electronics"
+        case .environment:
+            slug = "environment"
+        case .health:
+            slug = "health%20medicine%20and%20biotechnology"
+        case .information:
+            slug = "information%20technology%20and%20software"
+        case .instrumentation:
+            slug = "instrumentation"
+        case .manufacturing:
+            slug = "manufacturing"
+        case .materials:
+            slug = "materials%20and%20coatings"
+        case .mechanical:
+            slug = "mechanical%20and%20fluid%20systems"
+        case .optics:
+            slug = "optics"
+        case .power:
+            slug = "power%20generation%20and%20storage"
+        case .propulsion:
+            slug = "propulsion"
+        case .robotics:
+            slug = "robotics%20automation%20and%20control"
+        case .sensors:
+            slug = "sensors"
+        }
+
+        return await fetchCategory(slug: slug)
+    }
+
+    // MARK: - Fetch Single Category
+    private func fetchCategory(slug: String) async -> [Patent] {
+        // Add timestamp to bust any caches
+        let timestamp = Int(Date().timeIntervalSince1970)
+        let urlString = "\(baseURL)/searchosapicat/multi/aw/patent/\(slug)/1/1000/?t=\(timestamp)"
+        print(">>> FETCHING: \(urlString)")
+
+        guard let url = URL(string: urlString) else {
+            print(">>> ERROR: Invalid URL for \(slug)")
+            return []
+        }
+
+        do {
+            let (data, response) = try await session.data(from: url)
+            print(">>> GOT DATA: \(data.count) bytes for \(slug)")
+
+            guard let httpResponse = response as? HTTPURLResponse,
+                  httpResponse.statusCode == 200 else {
+                print(">>> ERROR: Bad HTTP status for \(slug)")
+                return []
+            }
+
+            let results = try JSONDecoder().decode([ElasticSearchResult].self, from: data)
+            print(">>> DECODED: \(results.count) items for \(slug)")
+
+            let patents = results.compactMap { result -> Patent? in
+                guard let title = result.source.title, !title.isEmpty else { return nil }
+
+                let imageURL: String?
+                if let img = result.source.img1, !img.isEmpty {
+                    imageURL = img.hasPrefix("http") ? img : "\(baseURL)\(img)"
+                } else {
+                    imageURL = nil
+                }
+
+                var desc = result.source.abstract ?? ""
+                if let tech = result.source.techDesc, !tech.isEmpty, !desc.contains(tech.prefix(50)) {
+                    desc += desc.isEmpty ? tech : "\n\n\(tech)"
+                }
+
+                return Patent(
+                    id: result.id,
+                    title: title,
+                    description: desc,
+                    category: result.source.category ?? "General",
+                    caseNumber: result.source.clientRecordId ?? result.id,
+                    patentNumber: result.source.patentNumber,
+                    imageURL: imageURL,
+                    center: result.source.center,
+                    trl: result.source.trl
+                )
+            }
+            print(">>> RETURNING: \(patents.count) patents for \(slug)")
+            return patents
+        } catch {
+            print(">>> CATCH ERROR for \(slug): \(error)")
+            return []
+        }
+    }
+
+    // MARK: - Fetch All Categories Combined
+    private func fetchAllCategories() async throws -> [Patent] {
+        let slugs = [
+            "aerospace",
+            "communications",
+            "electrical%20and%20electronics",
+            "environment",
+            "health%20medicine%20and%20biotechnology",
+            "information%20technology%20and%20software",
+            "instrumentation",
+            "manufacturing",
+            "materials%20and%20coatings",
+            "mechanical%20and%20fluid%20systems",
+            "optics",
+            "power%20generation%20and%20storage",
+            "propulsion",
+            "robotics%20automation%20and%20control",
+            "sensors"
+        ]
+
+        var allPatents: [String: Patent] = [:]
+
+        await withTaskGroup(of: [Patent].self) { group in
+            for slug in slugs {
+                group.addTask {
+                    await self.fetchCategory(slug: slug)
+                }
+            }
+
+            for await patents in group {
+                for patent in patents {
+                    if allPatents[patent.id] == nil {
+                        allPatents[patent.id] = patent
+                    }
+                }
+            }
+        }
+
+        return Array(allPatents.values).sorted { $0.title < $1.title }
     }
 
     // MARK: - Search Patents
@@ -18,7 +166,7 @@ class NASAAPI {
         guard !trimmedQuery.isEmpty else { throw NASAAPIError.noResults }
 
         let encodedQuery = trimmedQuery.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? trimmedQuery
-        let urlString = "\(baseURL)/patent/\(encodedQuery)?page=\(page)"
+        let urlString = "\(baseURL)/api/api/patent/\(encodedQuery)?page=\(page)"
 
         guard let url = URL(string: urlString) else {
             throw NASAAPIError.invalidURL
@@ -34,74 +182,13 @@ class NASAAPI {
             throw NASAAPIError.httpError(httpResponse.statusCode)
         }
 
-        let decoder = JSONDecoder()
-        let apiResponse = try decoder.decode(NASAPatentResponse.self, from: data)
-
+        let apiResponse = try JSONDecoder().decode(NASAPatentResponse.self, from: data)
         return apiResponse.toPatents()
     }
 
-    // MARK: - Browse All Patents (by category)
-    func browsePatents(category: PatentCategory = .all, page: Int = 1) async throws -> [Patent] {
-        // For "All", just search general term
-        if category == .all {
-            return try await searchPatents(query: "technology", page: page)
-        }
-
-        // Search by category name
-        let patents = try await searchPatents(query: category.rawValue, page: page)
-
-        // Filter to only include patents that actually match the category
-        let filtered = patents.filter { patent in
-            let patentCategory = patent.category.lowercased()
-            let targetCategory = category.rawValue.lowercased()
-
-            // Exact match or contains the key term
-            if patentCategory == targetCategory {
-                return true
-            }
-
-            // Check for partial matches (e.g., "Health" matches "Health Medicine and Biotechnology")
-            let targetWords = targetCategory.components(separatedBy: .whitespaces)
-            for word in targetWords where word.count > 3 {
-                if patentCategory.contains(word) {
-                    return true
-                }
-            }
-
-            return false
-        }
-
-        // If filtering removed everything, return unfiltered (API might have different category names)
-        return filtered.isEmpty ? patents : filtered
-    }
-
-    // MARK: - Get Featured/Recent Patents
-    func getFeaturedPatents() async throws -> [Patent] {
-        // Search across popular categories to get a mix
-        let queries = ["aeronautics", "robotics", "sensors", "materials", "propulsion"]
-        var allPatents: [Patent] = []
-
-        for query in queries {
-            do {
-                let patents = try await searchPatents(query: query, page: 1)
-                allPatents.append(contentsOf: patents.prefix(3))
-            } catch {
-                continue // Skip failed queries
-            }
-        }
-
-        return Array(Set(allPatents)).sorted { $0.title < $1.title }
-    }
-
-    // MARK: - Get Patent by ID
-    func getPatent(id: String) async throws -> Patent? {
-        let patents = try await searchPatents(query: id)
-        return patents.first { $0.id == id || $0.caseNumber == id }
-    }
-
-    // MARK: - Get Patent Detail (Scrapes full page)
+    // MARK: - Get Patent Detail
     func getPatentDetail(caseNumber: String) async throws -> PatentDetail {
-        let urlString = "https://technology.nasa.gov/patent/\(caseNumber)"
+        let urlString = "\(baseURL)/patent/\(caseNumber)"
         guard let url = URL(string: urlString) else {
             throw NASAAPIError.invalidURL
         }
@@ -122,76 +209,53 @@ class NASAAPI {
 
     // MARK: - HTML Parser
     private func parsePatentDetail(html: String, caseNumber: String) -> PatentDetail {
-        // Extract title
         let title = extractMatch(from: html, pattern: "<h1[^>]*>([^<]+)</h1>") ?? caseNumber
 
-        // Extract full description
-        var description = extractMatch(from: html, pattern: "<div class=\"description\"[^>]*>(.*?)</div>\\s*</div>") ?? ""
-        description = cleanHTML(description)
+        var abstract = extractMatch(from: html, pattern: "<div class=\"abstract body-text\">(.*?)</div>") ?? ""
+        abstract = cleanHTML(abstract)
 
-        // Extract benefits
-        let benefitsSection = extractMatch(from: html, pattern: "<div class=\"benefits\">(.*?)</div>\\s*</div>") ?? ""
+        var techDesc = extractMatch(from: html, pattern: "<div class=\"tech_desc body-text\">(.*?)</div>") ?? ""
+        techDesc = cleanHTML(techDesc)
+
+        var descriptionParts: [String] = []
+        if !abstract.isEmpty { descriptionParts.append(abstract) }
+        if !techDesc.isEmpty && techDesc != abstract { descriptionParts.append(techDesc) }
+        let description = descriptionParts.joined(separator: "\n\n")
+
+        let benefitsSection = extractMatch(from: html, pattern: "<div class=\"benefits\">(.*?)</div>\\s*(?:</div>|<hr)") ?? ""
         let benefits = extractListItems(from: benefitsSection)
 
-        // Extract applications
-        let appsSection = extractMatch(from: html, pattern: "<div class=\"applications\">(.*?)</div>\\s*</div>") ?? ""
+        let appsSection = extractMatch(from: html, pattern: "<div class=\"applications\">(.*?)</div>\\s*(?:</div>|<hr)") ?? ""
         let applications = extractListItems(from: appsSection)
 
-        // Extract all images (full size, not thumbnails)
         let images = extractMatches(from: html, pattern: "src=\"(https://technology\\.nasa\\.gov/t2media/tops/img/[^\"]+)\"")
 
-        // Extract video URLs - comprehensive patterns
         var videos: [String] = []
-
-        // 1. Direct video files in src attributes
         videos.append(contentsOf: extractMatches(from: html, pattern: "src=[\"']([^\"']+\\.mp4)[\"']"))
-        videos.append(contentsOf: extractMatches(from: html, pattern: "src=[\"']([^\"']+\\.m4v)[\"']"))
-        videos.append(contentsOf: extractMatches(from: html, pattern: "src=[\"']([^\"']+\\.mov)[\"']"))
-        videos.append(contentsOf: extractMatches(from: html, pattern: "src=[\"']([^\"']+\\.webm)[\"']"))
-
-        // 2. Video source tags
-        videos.append(contentsOf: extractMatches(from: html, pattern: "<source[^>]+src=[\"']([^\"']+)[\"'][^>]*type=[\"']video/"))
-
-        // 3. AWS S3 URLs (NASA uses ntts-prod.s3.amazonaws.com)
+        videos.append(contentsOf: extractMatches(from: html, pattern: "<source[^>]+src=[\"']([^\"']+\\.mp4)[\"']"))
         videos.append(contentsOf: extractMatches(from: html, pattern: "[\"'](https://[^\"']*s3[^\"']*amazonaws\\.com[^\"']+\\.mp4)[\"']"))
 
-        // 4. YouTube embeds - convert to watch URLs
         let youtubeEmbeds = extractMatches(from: html, pattern: "src=[\"']https?://(?:www\\.)?youtube\\.com/embed/([^\"'?]+)")
         for videoID in youtubeEmbeds {
             videos.append("https://www.youtube.com/watch?v=\(videoID)")
         }
 
-        // 5. YouTube watch links (extract full URL)
-        videos.append(contentsOf: extractMatches(from: html, pattern: "href=[\"'](https?://(?:www\\.)?youtube\\.com/watch\\?v=[^\"'&]+)[\"']"))
-
-        // 6. YouTube short links
-        videos.append(contentsOf: extractMatches(from: html, pattern: "href=[\"'](https?://youtu\\.be/[^\"'?]+)[\"']"))
-
-        // 7. Any href to video files
-        videos.append(contentsOf: extractMatches(from: html, pattern: "href=[\"']([^\"']+\\.mp4)[\"']"))
-
-        // Clean up URLs - make relative URLs absolute
         videos = videos.compactMap { url -> String? in
             var cleanURL = url.trimmingCharacters(in: .whitespacesAndNewlines)
             if cleanURL.isEmpty { return nil }
-            // Make relative URLs absolute
             if cleanURL.hasPrefix("/") {
-                cleanURL = "https://technology.nasa.gov\(cleanURL)"
+                cleanURL = "\(baseURL)\(cleanURL)"
             } else if !cleanURL.hasPrefix("http") {
-                cleanURL = "https://technology.nasa.gov/\(cleanURL)"
+                cleanURL = "\(baseURL)/\(cleanURL)"
             }
             return cleanURL
         }
-
-        // Remove duplicates
         videos = Array(Set(videos))
 
-        // Extract patent numbers
         let patentNumbers = extractMatches(from: html, pattern: ">([0-9,D][0-9,]+)</a>")
             .map { $0.replacingOccurrences(of: ",", with: "") }
             .filter { $0.count >= 6 }
 
-        // Extract related technologies
         let relatedSection = extractMatch(from: html, pattern: "<div class=\"related\">(.*?)</div>") ?? ""
         let related = extractMatches(from: relatedSection, pattern: "href=\"/patent/([^\"]+)\"")
 
@@ -253,21 +317,14 @@ enum NASAAPIError: LocalizedError {
     case invalidURL
     case invalidResponse
     case httpError(Int)
-    case decodingError(Error)
     case noResults
 
     var errorDescription: String? {
         switch self {
-        case .invalidURL:
-            return "Invalid URL"
-        case .invalidResponse:
-            return "Invalid response from server"
-        case .httpError(let code):
-            return "Server error: \(code)"
-        case .decodingError(let error):
-            return "Failed to parse response: \(error.localizedDescription)"
-        case .noResults:
-            return "No patents found"
+        case .invalidURL: return "Invalid URL"
+        case .invalidResponse: return "Invalid response from server"
+        case .httpError(let code): return "Server error: \(code)"
+        case .noResults: return "No patents found"
         }
     }
 }

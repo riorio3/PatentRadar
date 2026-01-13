@@ -2,12 +2,14 @@ import SwiftUI
 
 struct ProblemSolverView: View {
     @EnvironmentObject var patentStore: PatentStore
+    @StateObject private var historyStore = ProblemHistoryStore.shared
     @State private var problemText = ""
     @State private var isSearching = false
     @State private var searchPhase = ""
     @State private var solution: ProblemSolution?
     @State private var matchedPatents: [Patent] = []
     @State private var errorMessage: String?
+    @State private var showHistory = false
     @FocusState private var isInputFocused: Bool
 
     var body: some View {
@@ -44,6 +46,14 @@ struct ProblemSolverView: View {
             }
             .navigationTitle("Problem Solver")
             .toolbar {
+                ToolbarItem(placement: .topBarLeading) {
+                    Button {
+                        showHistory = true
+                    } label: {
+                        Image(systemName: "clock.arrow.circlepath")
+                    }
+                    .disabled(historyStore.history.isEmpty)
+                }
                 ToolbarItem(placement: .topBarTrailing) {
                     if solution != nil || errorMessage != nil {
                         Button("Clear") {
@@ -60,7 +70,23 @@ struct ProblemSolverView: View {
                     }
                 }
             }
+            .sheet(isPresented: $showHistory) {
+                HistorySheet(
+                    historyStore: historyStore,
+                    onSelectEntry: { entry in
+                        loadFromHistory(entry)
+                        showHistory = false
+                    }
+                )
+            }
         }
+    }
+
+    private func loadFromHistory(_ entry: ProblemHistoryEntry) {
+        problemText = entry.problem
+        solution = entry.solution
+        matchedPatents = entry.matchedPatents
+        errorMessage = nil
     }
 
     // MARK: - Welcome Section
@@ -300,7 +326,15 @@ struct ProblemSolverView: View {
             }
 
             searchPhase = "Finding solutions..."
-            solution = try await AIService.shared.findPatentsForProblem(problemText, patents: uniquePatents)
+            let result = try await AIService.shared.findPatentsForProblem(problemText, patents: uniquePatents)
+            solution = result
+
+            // Save to history
+            historyStore.addEntry(
+                problem: problemText,
+                solution: result,
+                matchedPatents: uniquePatents
+            )
 
         } catch {
             errorMessage = error.localizedDescription
@@ -376,6 +410,108 @@ struct PatentMatchCard: View {
         if match.relevanceScore >= 80 { return .green }
         if match.relevanceScore >= 70 { return .blue }
         return .orange
+    }
+}
+
+// MARK: - History Sheet
+
+struct HistorySheet: View {
+    @ObservedObject var historyStore: ProblemHistoryStore
+    let onSelectEntry: (ProblemHistoryEntry) -> Void
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        NavigationStack {
+            Group {
+                if historyStore.history.isEmpty {
+                    emptyState
+                } else {
+                    historyList
+                }
+            }
+            .navigationTitle("History")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .topBarLeading) {
+                    if !historyStore.history.isEmpty {
+                        Button("Clear All", role: .destructive) {
+                            historyStore.clearHistory()
+                        }
+                    }
+                }
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button("Done") {
+                        dismiss()
+                    }
+                }
+            }
+        }
+    }
+
+    private var emptyState: some View {
+        VStack(spacing: 16) {
+            Image(systemName: "clock")
+                .font(.system(size: 48))
+                .foregroundStyle(.secondary)
+
+            Text("No History Yet")
+                .font(.headline)
+
+            Text("Your problem solving searches will appear here.")
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+                .multilineTextAlignment(.center)
+        }
+        .padding()
+    }
+
+    private var historyList: some View {
+        List {
+            ForEach(historyStore.history) { entry in
+                Button {
+                    onSelectEntry(entry)
+                } label: {
+                    HistoryEntryRow(entry: entry)
+                }
+                .buttonStyle(.plain)
+            }
+            .onDelete { indexSet in
+                for index in indexSet {
+                    historyStore.deleteEntry(historyStore.history[index])
+                }
+            }
+        }
+        .listStyle(.plain)
+    }
+}
+
+struct HistoryEntryRow: View {
+    let entry: ProblemHistoryEntry
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text(entry.problem)
+                .font(.subheadline.bold())
+                .lineLimit(2)
+
+            Text(entry.solution.summary)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .lineLimit(2)
+
+            HStack {
+                Label("\(entry.solution.matches.count) patents", systemImage: "doc.text")
+                    .font(.caption2)
+                    .foregroundStyle(.blue)
+
+                Spacer()
+
+                Text(entry.date, style: .relative)
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .padding(.vertical, 4)
     }
 }
 

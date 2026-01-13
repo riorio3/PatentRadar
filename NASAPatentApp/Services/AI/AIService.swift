@@ -290,14 +290,14 @@ private struct PatentMatchJSON: Codable {
 
 // MARK: - Problem Solution Models
 
-struct ProblemSolution {
+struct ProblemSolution: Codable {
     let problem: String
     let summary: String
     let matches: [PatentMatch]
     let additionalSuggestions: String
 }
 
-struct PatentMatch {
+struct PatentMatch: Codable {
     let patentIndex: Int
     let relevanceScore: Int
     let explanation: String

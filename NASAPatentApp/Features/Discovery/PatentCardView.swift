@@ -15,6 +15,8 @@ struct PatentCardView: View {
                             image
                                 .resizable()
                                 .aspectRatio(contentMode: .fill)
+                                .frame(height: 100)
+                                .clipped()
                         case .failure:
                             placeholderIcon
                         case .empty:
