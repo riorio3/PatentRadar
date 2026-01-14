@@ -1,6 +1,5 @@
 import SwiftUI
-import AVKit
-import WebKit
+import UIKit
 
 // MARK: - Full Screen Zoomable Image Viewer
 
@@ -167,198 +166,32 @@ struct ZoomableImageView: View {
     }
 }
 
-// MARK: - Video Player View
+// MARK: - Video Player Helper
 
-struct VideoPlayerView: View {
-    let videoURL: String
-    @Binding var isPresented: Bool
+struct VideoPlayerHelper {
+    static func openYouTube(url: String) {
+        guard let videoID = extractVideoID(from: url) else { return }
 
-    private var isYouTube: Bool {
-        videoURL.contains("youtube.com") || videoURL.contains("youtu.be")
+        // Try YouTube app first, then Safari
+        let youtubeAppURL = URL(string: "youtube://\(videoID)")!
+        let webURL = URL(string: "https://www.youtube.com/watch?v=\(videoID)")!
+
+        if UIApplication.shared.canOpenURL(youtubeAppURL) {
+            UIApplication.shared.open(youtubeAppURL)
+        } else {
+            UIApplication.shared.open(webURL)
+        }
     }
 
-    private var parsedURL: URL? {
-        if let url = URL(string: videoURL) {
-            return url
-        }
-        if let encoded = videoURL.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed),
-           let url = URL(string: encoded) {
-            return url
+    private static func extractVideoID(from url: String) -> String? {
+        if url.contains("youtube.com/watch?v=") {
+            return url.components(separatedBy: "v=").last?.components(separatedBy: "&").first
+        } else if url.contains("youtu.be/") {
+            return url.components(separatedBy: "youtu.be/").last?.components(separatedBy: "?").first
+        } else if url.contains("youtube.com/embed/") {
+            return url.components(separatedBy: "embed/").last?.components(separatedBy: "?").first
         }
         return nil
-    }
-
-    var body: some View {
-        ZStack {
-            Color.black.ignoresSafeArea()
-
-            if let url = parsedURL {
-                if isYouTube {
-                    // Use WebView for YouTube
-                    YouTubePlayerView(url: url, isPresented: $isPresented)
-                } else {
-                    // Use native AVPlayer for direct video URLs
-                    NativeVideoPlayerView(url: url, isPresented: $isPresented)
-                }
-            } else {
-                errorView
-            }
-
-            // Close button overlay
-            VStack {
-                HStack {
-                    Spacer()
-                    Button {
-                        isPresented = false
-                    } label: {
-                        Image(systemName: "xmark.circle.fill")
-                            .font(.title)
-                            .foregroundStyle(.white.opacity(0.8))
-                            .padding()
-                    }
-                }
-                Spacer()
-            }
-        }
-    }
-
-    private var errorView: some View {
-        VStack(spacing: 20) {
-            Image(systemName: "exclamationmark.triangle")
-                .font(.system(size: 60))
-                .foregroundStyle(.orange)
-
-            Text("Unable to Play Video")
-                .font(.title2.bold())
-                .foregroundStyle(.white)
-
-            Text("The video URL could not be loaded")
-                .font(.subheadline)
-                .foregroundStyle(.gray)
-
-            Button("Close") {
-                isPresented = false
-            }
-            .foregroundStyle(.white)
-            .padding(.horizontal, 24)
-            .padding(.vertical, 12)
-            .background(Color.blue)
-            .clipShape(Capsule())
-        }
-    }
-}
-
-// MARK: - Native AVPlayer Video View
-
-struct NativeVideoPlayerView: UIViewControllerRepresentable {
-    let url: URL
-    @Binding var isPresented: Bool
-
-    func makeUIViewController(context: Context) -> AVPlayerViewController {
-        let player = AVPlayer(url: url)
-        let controller = AVPlayerViewController()
-        controller.player = player
-        controller.showsPlaybackControls = true
-        controller.videoGravity = .resizeAspect
-        controller.delegate = context.coordinator
-
-        // Auto-play
-        player.play()
-
-        return controller
-    }
-
-    func updateUIViewController(_ uiViewController: AVPlayerViewController, context: Context) {
-        // Cleanup when view is being dismissed
-        if !isPresented {
-            uiViewController.player?.pause()
-            uiViewController.player = nil
-        }
-    }
-
-    func makeCoordinator() -> Coordinator {
-        Coordinator(isPresented: $isPresented)
-    }
-
-    class Coordinator: NSObject, AVPlayerViewControllerDelegate {
-        @Binding var isPresented: Bool
-
-        init(isPresented: Binding<Bool>) {
-            _isPresented = isPresented
-        }
-
-        func playerViewController(_ playerViewController: AVPlayerViewController, willEndFullScreenPresentationWithAnimationCoordinator coordinator: UIViewControllerTransitionCoordinator) {
-            // Clean up when dismissing
-            playerViewController.player?.pause()
-            playerViewController.player = nil
-            isPresented = false
-        }
-    }
-
-    static func dismantleUIViewController(_ uiViewController: AVPlayerViewController, coordinator: Coordinator) {
-        // Final cleanup when view is destroyed
-        uiViewController.player?.pause()
-        uiViewController.player = nil
-    }
-}
-
-// MARK: - YouTube WebView Player
-
-struct YouTubePlayerView: UIViewRepresentable {
-    let url: URL
-    @Binding var isPresented: Bool
-
-    func makeUIView(context: Context) -> WKWebView {
-        let config = WKWebViewConfiguration()
-        config.allowsInlineMediaPlayback = true
-        config.mediaTypesRequiringUserActionForPlayback = []
-
-        let webView = WKWebView(frame: .zero, configuration: config)
-        webView.isOpaque = false
-        webView.backgroundColor = .black
-        webView.scrollView.backgroundColor = .black
-
-        // Convert watch URL to embed URL for better playback
-        let embedURL = convertToEmbedURL(url)
-        let request = URLRequest(url: embedURL)
-        webView.load(request)
-
-        return webView
-    }
-
-    func updateUIView(_ uiView: WKWebView, context: Context) {
-        // Stop loading and clear content when dismissed
-        if !isPresented {
-            uiView.stopLoading()
-            uiView.loadHTMLString("", baseURL: nil)
-        }
-    }
-
-    static func dismantleUIView(_ uiView: WKWebView, coordinator: ()) {
-        // Final cleanup when view is destroyed
-        uiView.stopLoading()
-        uiView.loadHTMLString("", baseURL: nil)
-    }
-
-    private func convertToEmbedURL(_ url: URL) -> URL {
-        let urlString = url.absoluteString
-
-        // Extract video ID
-        var videoID: String?
-        if urlString.contains("youtube.com/watch?v=") {
-            videoID = urlString.components(separatedBy: "v=").last?.components(separatedBy: "&").first
-        } else if urlString.contains("youtu.be/") {
-            videoID = urlString.components(separatedBy: "youtu.be/").last?.components(separatedBy: "?").first
-        } else if urlString.contains("youtube.com/embed/") {
-            return url // Already an embed URL
-        }
-
-        if let id = videoID {
-            // Create embed URL with autoplay
-            return URL(string: "https://www.youtube.com/embed/\(id)?autoplay=1&playsinline=1") ?? url
-        }
-
-        return url
     }
 }
 
@@ -367,12 +200,14 @@ struct YouTubePlayerView: UIViewRepresentable {
 
 struct VideoThumbnailView: View {
     let videoURL: String
+    var posterURL: String? = nil
     let onTap: () -> Void
 
     var body: some View {
         Button(action: onTap) {
             ZStack {
-                if isYouTubeURL(videoURL), let thumbnailURL = youTubeThumbnailURL(videoURL) {
+                // YouTube thumbnail
+                if let thumbnailURL = youTubeThumbnailURL(videoURL) {
                     AsyncImage(url: thumbnailURL) { phase in
                         switch phase {
                         case .success(let image):
@@ -399,20 +234,18 @@ struct VideoThumbnailView: View {
                     )
 
                 // YouTube badge
-                if isYouTubeURL(videoURL) {
-                    VStack {
-                        HStack {
-                            Image(systemName: "play.rectangle.fill")
-                                .foregroundStyle(.red)
-                                .padding(6)
-                                .background(.black.opacity(0.7))
-                                .clipShape(RoundedRectangle(cornerRadius: 4))
-                            Spacer()
-                        }
+                VStack {
+                    HStack {
+                        Image(systemName: "play.rectangle.fill")
+                            .foregroundStyle(.red)
+                            .padding(6)
+                            .background(.black.opacity(0.7))
+                            .clipShape(RoundedRectangle(cornerRadius: 4))
                         Spacer()
                     }
-                    .padding(8)
+                    Spacer()
                 }
+                .padding(8)
             }
         }
         .buttonStyle(.plain)
@@ -426,28 +259,23 @@ struct VideoThumbnailView: View {
         )
         .overlay(
             VStack(spacing: 8) {
-                Image(systemName: "video.fill")
+                Image(systemName: "play.rectangle.fill")
                     .font(.system(size: 40))
-                Text("Video")
+                    .foregroundStyle(.red)
+                Text("YouTube")
                     .font(.caption)
+                    .foregroundStyle(.white)
             }
-            .foregroundStyle(.blue)
         )
-    }
-
-    private func isYouTubeURL(_ url: String) -> Bool {
-        url.contains("youtube.com") || url.contains("youtu.be")
     }
 
     private func youTubeThumbnailURL(_ url: String) -> URL? {
         var videoID: String?
-
         if url.contains("youtube.com/watch?v=") {
             videoID = url.components(separatedBy: "v=").last?.components(separatedBy: "&").first
         } else if url.contains("youtu.be/") {
             videoID = url.components(separatedBy: "youtu.be/").last?.components(separatedBy: "?").first
         }
-
         guard let id = videoID else { return nil }
         return URL(string: "https://img.youtube.com/vi/\(id)/hqdefault.jpg")
     }

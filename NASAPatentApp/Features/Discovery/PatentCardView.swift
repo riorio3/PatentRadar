@@ -5,37 +5,17 @@ struct PatentCardView: View {
     @EnvironmentObject var patentStore: PatentStore
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            // Image or Icon Header
-            ZStack {
-                if let imageURL = patent.imageURL, let url = URL(string: imageURL) {
-                    AsyncImage(url: url) { phase in
-                        switch phase {
-                        case .success(let image):
-                            image
-                                .resizable()
-                                .aspectRatio(contentMode: .fill)
-                                .frame(height: 100)
-                                .clipped()
-                        case .failure:
-                            placeholderIcon
-                        case .empty:
-                            ProgressView()
-                        @unknown default:
-                            placeholderIcon
-                        }
-                    }
-                } else {
-                    placeholderIcon
-                }
-            }
-            .frame(height: 100)
-            .frame(maxWidth: .infinity)
-            .background(Color(.systemGray6))
-            .clipShape(RoundedRectangle(cornerRadius: 8))
+        VStack(alignment: .leading, spacing: 8) {
+            // Image Header - fixed height container
+            imageHeader
+                .frame(maxWidth: .infinity)
+                .frame(height: 90)
+                .clipped()
+                .background(Color(.systemGray6))
+                .clipShape(RoundedRectangle(cornerRadius: 8))
 
             // Category Badge
-            HStack {
+            HStack(spacing: 4) {
                 Image(systemName: patent.categoryIcon)
                     .font(.caption2)
                 Text(patent.category)
@@ -49,6 +29,7 @@ struct PatentCardView: View {
                 .font(.subheadline.weight(.semibold))
                 .lineLimit(2)
                 .multilineTextAlignment(.leading)
+                .fixedSize(horizontal: false, vertical: true)
 
             // Description Preview
             Text(patent.description)
@@ -58,7 +39,7 @@ struct PatentCardView: View {
 
             Spacer(minLength: 0)
 
-            // Save Button
+            // Footer
             HStack {
                 if let center = patent.center {
                     Text(center)
@@ -74,17 +55,47 @@ struct PatentCardView: View {
                 }
             }
         }
-        .padding()
-        .frame(height: 280)
+        .padding(12)
+        .frame(height: 260)
         .background(Color(.systemBackground))
-        .clipShape(RoundedRectangle(cornerRadius: 16))
-        .shadow(color: .black.opacity(0.08), radius: 8, y: 4)
+        .clipShape(RoundedRectangle(cornerRadius: 12))
+        .shadow(color: .black.opacity(0.1), radius: 4, y: 2)
+    }
+
+    @ViewBuilder
+    private var imageHeader: some View {
+        GeometryReader { geo in
+            if let imageURL = patent.imageURL, let url = URL(string: imageURL) {
+                AsyncImage(url: url) { phase in
+                    switch phase {
+                    case .success(let image):
+                        image
+                            .resizable()
+                            .aspectRatio(contentMode: .fill)
+                            .frame(width: geo.size.width, height: geo.size.height)
+                    case .failure:
+                        placeholderIcon
+                            .frame(width: geo.size.width, height: geo.size.height)
+                    case .empty:
+                        ProgressView()
+                            .frame(width: geo.size.width, height: geo.size.height)
+                    @unknown default:
+                        placeholderIcon
+                            .frame(width: geo.size.width, height: geo.size.height)
+                    }
+                }
+            } else {
+                placeholderIcon
+                    .frame(width: geo.size.width, height: geo.size.height)
+            }
+        }
     }
 
     private var placeholderIcon: some View {
         Image(systemName: patent.categoryIcon)
-            .font(.system(size: 36))
-            .foregroundStyle(.blue.opacity(0.6))
+            .font(.system(size: 32))
+            .foregroundStyle(.blue.opacity(0.5))
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
     private func toggleSave() {
@@ -99,16 +110,16 @@ struct PatentCardView: View {
 #Preview {
     PatentCardView(patent: Patent(
         id: "1",
-        title: "Advanced Composite Materials for Aerospace Applications",
-        description: "A novel composite material system designed for extreme temperature environments in aerospace applications.",
+        title: "Advanced Composite Materials",
+        description: "A novel composite material system designed for extreme temperatures.",
         category: "Materials",
         caseNumber: "ARC-14653-2",
         patentNumber: "US9876543",
         imageURL: nil,
-        center: "Ames Research Center",
+        center: "ARC",
         trl: "6"
     ))
     .environmentObject(PatentStore())
-    .frame(width: 180)
+    .frame(width: 170)
     .padding()
 }

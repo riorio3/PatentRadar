@@ -10,8 +10,8 @@ struct DiscoveryView: View {
     @State private var hasSearched = false
 
     private let columns = [
-        GridItem(.flexible(), spacing: 16),
-        GridItem(.flexible(), spacing: 16)
+        GridItem(.flexible(), spacing: 12, alignment: .top),
+        GridItem(.flexible(), spacing: 12, alignment: .top)
     ]
 
     var body: some View {
@@ -52,10 +52,14 @@ struct DiscoveryView: View {
             }
             .searchable(text: $searchText, prompt: "Search NASA patents...")
             .onSubmit(of: .search) {
+                guard !searchText.trimmingCharacters(in: .whitespaces).isEmpty else { return }
                 Task { await search() }
             }
             .refreshable {
                 await search()
+            }
+            .navigationDestination(for: Patent.self) { patent in
+                PatentDetailView(patent: patent)
             }
         }
     }
@@ -168,7 +172,7 @@ struct DiscoveryView: View {
     }
 
     private var patentsGrid: some View {
-        LazyVGrid(columns: columns, spacing: 16) {
+        LazyVGrid(columns: columns, spacing: 12) {
             ForEach(patents) { patent in
                 NavigationLink(value: patent) {
                     PatentCardView(patent: patent)
@@ -176,31 +180,25 @@ struct DiscoveryView: View {
                 .buttonStyle(.plain)
             }
         }
-        .navigationDestination(for: Patent.self) { patent in
-            PatentDetailView(patent: patent)
-        }
     }
 
     // MARK: - Actions
 
     private func search() async {
-        print(">>> DiscoveryView.search() - selectedCategory: \(selectedCategory)")
-        print(">>> DiscoveryView.search() - searchText: '\(searchText)'")
-
         isLoading = true
         errorMessage = nil
         hasSearched = true
 
+        // Allow UI to update before network call
+        try? await Task.sleep(nanoseconds: 50_000_000) // 50ms
+
         do {
             if searchText.isEmpty {
-                print(">>> Calling browsePatents with: \(selectedCategory)")
                 patents = try await NASAAPI.shared.browsePatents(category: selectedCategory)
-                print(">>> Got \(patents.count) patents back")
             } else {
                 patents = try await NASAAPI.shared.searchPatents(query: searchText)
             }
         } catch {
-            print(">>> ERROR in search(): \(error)")
             errorMessage = error.localizedDescription
         }
 

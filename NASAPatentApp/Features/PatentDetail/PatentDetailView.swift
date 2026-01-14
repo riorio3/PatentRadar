@@ -13,10 +13,8 @@ struct PatentDetailView: View {
     @State private var isLoadingDetail = true
     @State private var selectedMediaIndex = 0
 
-    // Full screen media states
+    // Full screen media state
     @State private var showFullScreenImage = false
-    @State private var showVideoPlayer = false
-    @State private var selectedVideoURL = ""
 
     var body: some View {
         ScrollView {
@@ -90,12 +88,6 @@ struct PatentDetailView: View {
                 images: mediaImages,
                 selectedIndex: $selectedMediaIndex,
                 isPresented: $showFullScreenImage
-            )
-        }
-        .fullScreenCover(isPresented: $showVideoPlayer) {
-            VideoPlayerView(
-                videoURL: selectedVideoURL,
-                isPresented: $showVideoPlayer
             )
         }
         .task {
@@ -228,9 +220,8 @@ struct PatentDetailView: View {
     }
 
     private func videoSlide(urlString: String, index: Int) -> some View {
-        VideoThumbnailView(videoURL: urlString) {
-            selectedVideoURL = urlString
-            showVideoPlayer = true
+        VideoThumbnailView(videoURL: urlString, posterURL: mediaImages.first) {
+            VideoPlayerHelper.openYouTube(url: urlString)
         }
         .tag(index)
     }

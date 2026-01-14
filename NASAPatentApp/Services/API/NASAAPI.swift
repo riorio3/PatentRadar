@@ -6,23 +6,22 @@ class NASAAPI {
     private let baseURL = "https://technology.nasa.gov"
     private let session: URLSession
 
+    // Cache for "All" patents
+    private var cachedAllPatents: [Patent]?
+    private var cacheTime: Date?
+    private let cacheValiditySeconds: TimeInterval = 300 // 5 minutes
+
     private init() {
         let config = URLSessionConfiguration.default
         config.timeoutIntervalForRequest = 30
-        config.requestCachePolicy = .reloadIgnoringLocalAndRemoteCacheData
-        config.urlCache = nil
         session = URLSession(configuration: config)
     }
 
     // MARK: - Browse Patents by Category
     func browsePatents(category: PatentCategory = .all) async throws -> [Patent] {
-        print(">>> browsePatents called with category: \(category)")
-
-        // Build the URL based on category
         let slug: String
         switch category {
         case .all:
-            // For "all", fetch from multiple categories and combine
             return try await fetchAllCategories()
         case .aeronautics:
             slug = "aerospace"
@@ -61,30 +60,19 @@ class NASAAPI {
 
     // MARK: - Fetch Single Category
     private func fetchCategory(slug: String) async -> [Patent] {
-        // Add timestamp to bust any caches
-        let timestamp = Int(Date().timeIntervalSince1970)
-        let urlString = "\(baseURL)/searchosapicat/multi/aw/patent/\(slug)/1/1000/?t=\(timestamp)"
-        print(">>> FETCHING: \(urlString)")
+        let urlString = "\(baseURL)/searchosapicat/multi/aw/patent/\(slug)/1/200/"
 
-        guard let url = URL(string: urlString) else {
-            print(">>> ERROR: Invalid URL for \(slug)")
-            return []
-        }
+        guard let url = URL(string: urlString) else { return [] }
 
         do {
             let (data, response) = try await session.data(from: url)
-            print(">>> GOT DATA: \(data.count) bytes for \(slug)")
 
             guard let httpResponse = response as? HTTPURLResponse,
-                  httpResponse.statusCode == 200 else {
-                print(">>> ERROR: Bad HTTP status for \(slug)")
-                return []
-            }
+                  httpResponse.statusCode == 200 else { return [] }
 
             let results = try JSONDecoder().decode([ElasticSearchResult].self, from: data)
-            print(">>> DECODED: \(results.count) items for \(slug)")
 
-            let patents = results.compactMap { result -> Patent? in
+            return results.compactMap { result -> Patent? in
                 guard let title = result.source.title, !title.isEmpty else { return nil }
 
                 let imageURL: String?
@@ -111,16 +99,20 @@ class NASAAPI {
                     trl: result.source.trl
                 )
             }
-            print(">>> RETURNING: \(patents.count) patents for \(slug)")
-            return patents
         } catch {
-            print(">>> CATCH ERROR for \(slug): \(error)")
             return []
         }
     }
 
     // MARK: - Fetch All Categories Combined
     private func fetchAllCategories() async throws -> [Patent] {
+        // Return cached data if valid
+        if let cached = cachedAllPatents,
+           let time = cacheTime,
+           Date().timeIntervalSince(time) < cacheValiditySeconds {
+            return cached
+        }
+
         let slugs = [
             "aerospace",
             "communications",
@@ -157,7 +149,13 @@ class NASAAPI {
             }
         }
 
-        return Array(allPatents.values).sorted { $0.title < $1.title }
+        let patents = Array(allPatents.values).sorted { $0.title < $1.title }
+
+        // Cache results
+        cachedAllPatents = patents
+        cacheTime = Date()
+
+        return patents
     }
 
     // MARK: - Search Patents
@@ -230,27 +228,13 @@ class NASAAPI {
 
         let images = extractMatches(from: html, pattern: "src=\"(https://technology\\.nasa\\.gov/t2media/tops/img/[^\"]+)\"")
 
+        // YouTube videos only
         var videos: [String] = []
-        videos.append(contentsOf: extractMatches(from: html, pattern: "src=[\"']([^\"']+\\.mp4)[\"']"))
-        videos.append(contentsOf: extractMatches(from: html, pattern: "<source[^>]+src=[\"']([^\"']+\\.mp4)[\"']"))
-        videos.append(contentsOf: extractMatches(from: html, pattern: "[\"'](https://[^\"']*s3[^\"']*amazonaws\\.com[^\"']+\\.mp4)[\"']"))
-
-        let youtubeEmbeds = extractMatches(from: html, pattern: "src=[\"']https?://(?:www\\.)?youtube\\.com/embed/([^\"'?]+)")
-        for videoID in youtubeEmbeds {
+        let youtubeEmbedIDs = extractMatches(from: html, pattern: "src=[\"']https?://(?:www\\.)?youtube\\.com/embed/([^\"'?]+)")
+        let youtubeWatchIDs = extractMatches(from: html, pattern: "href=[\"']https?://(?:www\\.)?youtube\\.com/watch\\?v=([^\"'&]+)")
+        for videoID in Set(youtubeEmbedIDs + youtubeWatchIDs) {
             videos.append("https://www.youtube.com/watch?v=\(videoID)")
         }
-
-        videos = videos.compactMap { url -> String? in
-            var cleanURL = url.trimmingCharacters(in: .whitespacesAndNewlines)
-            if cleanURL.isEmpty { return nil }
-            if cleanURL.hasPrefix("/") {
-                cleanURL = "\(baseURL)\(cleanURL)"
-            } else if !cleanURL.hasPrefix("http") {
-                cleanURL = "\(baseURL)/\(cleanURL)"
-            }
-            return cleanURL
-        }
-        videos = Array(Set(videos))
 
         let patentNumbers = extractMatches(from: html, pattern: ">([0-9,D][0-9,]+)</a>")
             .map { $0.replacingOccurrences(of: ",", with: "") }
