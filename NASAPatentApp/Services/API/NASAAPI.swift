@@ -6,10 +6,15 @@ class NASAAPI {
     private let baseURL = "https://technology.nasa.gov"
     private let session: URLSession
 
-    // Cache for "All" patents
-    private var cachedAllPatents: [Patent]?
-    private var cacheTime: Date?
-    private let cacheValiditySeconds: TimeInterval = 300 // 5 minutes
+    // MARK: - Cache Configuration
+    private let categoryCacheSeconds: TimeInterval = 300      // 5 minutes for categories
+    private let searchCacheSeconds: TimeInterval = 180        // 3 minutes for search
+    private let detailCacheSeconds: TimeInterval = 600        // 10 minutes for details
+
+    // MARK: - Response Caches
+    private var categoryCache: [String: (patents: [Patent], time: Date)] = [:]
+    private var searchCache: [String: (patents: [Patent], time: Date)] = [:]
+    private var detailCache: [String: (detail: PatentDetail, time: Date)] = [:]
 
     private init() {
         let config = URLSessionConfiguration.default
@@ -19,149 +24,129 @@ class NASAAPI {
 
     // MARK: - Browse Patents by Category
     func browsePatents(category: PatentCategory = .all) async throws -> [Patent] {
-        let slug: String
-        switch category {
-        case .all:
+        try Task.checkCancellation()
+
+        if category == .all {
             return try await fetchAllCategories()
-        case .aeronautics:
-            slug = "aerospace"
-        case .communications:
-            slug = "communications"
-        case .electronics:
-            slug = "electrical%20and%20electronics"
-        case .environment:
-            slug = "environment"
-        case .health:
-            slug = "health%20medicine%20and%20biotechnology"
-        case .information:
-            slug = "information%20technology%20and%20software"
-        case .instrumentation:
-            slug = "instrumentation"
-        case .manufacturing:
-            slug = "manufacturing"
-        case .materials:
-            slug = "materials%20and%20coatings"
-        case .mechanical:
-            slug = "mechanical%20and%20fluid%20systems"
-        case .optics:
-            slug = "optics"
-        case .power:
-            slug = "power%20generation%20and%20storage"
-        case .propulsion:
-            slug = "propulsion"
-        case .robotics:
-            slug = "robotics%20automation%20and%20control"
-        case .sensors:
-            slug = "sensors"
         }
 
-        return await fetchCategory(slug: slug)
+        guard let slug = category.apiSlug else { return [] }
+
+        // Check cache first
+        if let cached = categoryCache[slug],
+           Date().timeIntervalSince(cached.time) < categoryCacheSeconds {
+            return cached.patents
+        }
+
+        let patents = try await fetchCategoryFromNetwork(slug: slug)
+        categoryCache[slug] = (patents, Date())
+        return patents
     }
 
-    // MARK: - Fetch Single Category
-    private func fetchCategory(slug: String) async -> [Patent] {
-        let urlString = "\(baseURL)/searchosapicat/multi/aw/patent/\(slug)/1/200/"
+    // MARK: - Fetch Single Category from Network
+    private func fetchCategoryFromNetwork(slug: String) async throws -> [Patent] {
+        try Task.checkCancellation()
 
+        let urlString = "\(baseURL)/searchosapicat/multi/aw/patent/\(slug)/1/200/"
         guard let url = URL(string: urlString) else { return [] }
 
-        do {
-            let (data, response) = try await session.data(from: url)
+        let (data, response) = try await session.data(from: url)
+        try Task.checkCancellation()
 
-            guard let httpResponse = response as? HTTPURLResponse,
-                  httpResponse.statusCode == 200 else { return [] }
+        guard let httpResponse = response as? HTTPURLResponse,
+              httpResponse.statusCode == 200 else { return [] }
 
-            let results = try JSONDecoder().decode([ElasticSearchResult].self, from: data)
+        let results = try JSONDecoder().decode([ElasticSearchResult].self, from: data)
 
-            return results.compactMap { result -> Patent? in
-                guard let title = result.source.title, !title.isEmpty else { return nil }
+        return results.compactMap { result -> Patent? in
+            guard let title = result.source.title, !title.isEmpty else { return nil }
 
-                let imageURL: String?
-                if let img = result.source.img1, !img.isEmpty {
-                    imageURL = img.hasPrefix("http") ? img : "\(baseURL)\(img)"
-                } else {
-                    imageURL = nil
-                }
-
-                var desc = result.source.abstract ?? ""
-                if let tech = result.source.techDesc, !tech.isEmpty, !desc.contains(tech.prefix(50)) {
-                    desc += desc.isEmpty ? tech : "\n\n\(tech)"
-                }
-
-                return Patent(
-                    id: result.id,
-                    title: title,
-                    description: desc,
-                    category: result.source.category ?? "General",
-                    caseNumber: result.source.clientRecordId ?? result.id,
-                    patentNumber: result.source.patentNumber,
-                    imageURL: imageURL,
-                    center: result.source.center,
-                    trl: result.source.trl
-                )
+            let imageURL: String?
+            if let img = result.source.img1, !img.isEmpty {
+                imageURL = img.hasPrefix("http") ? img : "\(baseURL)\(img)"
+            } else {
+                imageURL = nil
             }
-        } catch {
-            return []
+
+            var desc = result.source.abstract ?? ""
+            if let tech = result.source.techDesc, !tech.isEmpty, !desc.contains(tech.prefix(50)) {
+                desc += desc.isEmpty ? tech : "\n\n\(tech)"
+            }
+
+            return Patent(
+                id: result.id,
+                title: title,
+                description: desc,
+                category: result.source.category ?? "General",
+                caseNumber: result.source.clientRecordId ?? result.id,
+                patentNumber: result.source.patentNumber,
+                imageURL: imageURL,
+                center: result.source.center,
+                trl: result.source.trl
+            )
         }
     }
 
     // MARK: - Fetch All Categories Combined
     private func fetchAllCategories() async throws -> [Patent] {
+        try Task.checkCancellation()
+
+        let cacheKey = "all"
+
         // Return cached data if valid
-        if let cached = cachedAllPatents,
-           let time = cacheTime,
-           Date().timeIntervalSince(time) < cacheValiditySeconds {
-            return cached
+        if let cached = categoryCache[cacheKey],
+           Date().timeIntervalSince(cached.time) < categoryCacheSeconds {
+            return cached.patents
         }
 
-        let slugs = [
-            "aerospace",
-            "communications",
-            "electrical%20and%20electronics",
-            "environment",
-            "health%20medicine%20and%20biotechnology",
-            "information%20technology%20and%20software",
-            "instrumentation",
-            "manufacturing",
-            "materials%20and%20coatings",
-            "mechanical%20and%20fluid%20systems",
-            "optics",
-            "power%20generation%20and%20storage",
-            "propulsion",
-            "robotics%20automation%20and%20control",
-            "sensors"
-        ]
+        let slugs = PatentCategory.allCases.compactMap { $0 != .all ? $0.apiSlug : nil }
 
         var allPatents: [String: Patent] = [:]
 
-        await withTaskGroup(of: [Patent].self) { group in
-            for slug in slugs {
-                group.addTask {
-                    await self.fetchCategory(slug: slug)
-                }
-            }
+        // Fetch in batches of 3 to avoid overwhelming network
+        let batchSize = 3
+        for batchStart in stride(from: 0, to: slugs.count, by: batchSize) {
+            try Task.checkCancellation()
 
-            for await patents in group {
-                for patent in patents {
-                    if allPatents[patent.id] == nil {
-                        allPatents[patent.id] = patent
+            let batchEnd = min(batchStart + batchSize, slugs.count)
+            let batch = Array(slugs[batchStart..<batchEnd])
+
+            try await withThrowingTaskGroup(of: [Patent].self) { group in
+                for slug in batch {
+                    group.addTask {
+                        try await self.fetchCategoryFromNetwork(slug: slug)
+                    }
+                }
+
+                for try await patents in group {
+                    for patent in patents {
+                        if allPatents[patent.id] == nil {
+                            allPatents[patent.id] = patent
+                        }
                     }
                 }
             }
         }
 
         let patents = Array(allPatents.values).sorted { $0.title < $1.title }
-
-        // Cache results
-        cachedAllPatents = patents
-        cacheTime = Date()
-
+        categoryCache[cacheKey] = (patents, Date())
         return patents
     }
 
     // MARK: - Search Patents
     func searchPatents(query: String, page: Int = 1) async throws -> [Patent] {
+        try Task.checkCancellation()
+
         let trimmedQuery = query.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmedQuery.isEmpty else { throw NASAAPIError.noResults }
+
+        let cacheKey = "\(trimmedQuery.lowercased())_\(page)"
+
+        // Check cache first
+        if let cached = searchCache[cacheKey],
+           Date().timeIntervalSince(cached.time) < searchCacheSeconds {
+            return cached.patents
+        }
 
         let encodedQuery = trimmedQuery.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? trimmedQuery
         let urlString = "\(baseURL)/api/api/patent/\(encodedQuery)?page=\(page)"
@@ -171,6 +156,7 @@ class NASAAPI {
         }
 
         let (data, response) = try await session.data(from: url)
+        try Task.checkCancellation()
 
         guard let httpResponse = response as? HTTPURLResponse else {
             throw NASAAPIError.invalidResponse
@@ -181,17 +167,28 @@ class NASAAPI {
         }
 
         let apiResponse = try JSONDecoder().decode(NASAPatentResponse.self, from: data)
-        return apiResponse.toPatents()
+        let patents = apiResponse.toPatents()
+        searchCache[cacheKey] = (patents, Date())
+        return patents
     }
 
     // MARK: - Get Patent Detail
     func getPatentDetail(caseNumber: String) async throws -> PatentDetail {
+        try Task.checkCancellation()
+
+        // Check cache first
+        if let cached = detailCache[caseNumber],
+           Date().timeIntervalSince(cached.time) < detailCacheSeconds {
+            return cached.detail
+        }
+
         let urlString = "\(baseURL)/patent/\(caseNumber)"
         guard let url = URL(string: urlString) else {
             throw NASAAPIError.invalidURL
         }
 
         let (data, response) = try await session.data(from: url)
+        try Task.checkCancellation()
 
         guard let httpResponse = response as? HTTPURLResponse,
               httpResponse.statusCode == 200 else {
@@ -202,7 +199,24 @@ class NASAAPI {
             throw NASAAPIError.invalidResponse
         }
 
-        return parsePatentDetail(html: html, caseNumber: caseNumber)
+        let detail = parsePatentDetail(html: html, caseNumber: caseNumber)
+        detailCache[caseNumber] = (detail, Date())
+        return detail
+    }
+
+    // MARK: - Cache Management
+    func clearCache() {
+        categoryCache.removeAll()
+        searchCache.removeAll()
+        detailCache.removeAll()
+    }
+
+    func clearCategoryCache() {
+        categoryCache.removeAll()
+    }
+
+    func clearSearchCache() {
+        searchCache.removeAll()
     }
 
     // MARK: - HTML Parser

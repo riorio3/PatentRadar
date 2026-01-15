@@ -4,6 +4,7 @@ struct PatentDetailView: View {
     let patent: Patent
     @EnvironmentObject var patentStore: PatentStore
     @State private var showAnalysis = false
+    @State private var showHistory = false
     @State private var analysis: BusinessAnalysis?
     @State private var isAnalyzing = false
     @State private var analysisError: String?
@@ -82,6 +83,9 @@ struct PatentDetailView: View {
             if let analysis = analysis {
                 BusinessAnalysisView(analysis: analysis, patent: patent)
             }
+        }
+        .sheet(isPresented: $showHistory) {
+            BusinessAnalysisHistoryView()
         }
         .fullScreenCover(isPresented: $showFullScreenImage) {
             FullScreenImageViewer(
@@ -428,25 +432,37 @@ struct PatentDetailView: View {
                 }
             }
 
-            Button {
-                Task { await analyzePatent() }
-            } label: {
-                HStack {
-                    if isAnalyzing {
-                        ProgressView()
-                            .tint(.white)
-                    } else {
-                        Image(systemName: "sparkles")
+            HStack(spacing: 12) {
+                Button {
+                    Task { await analyzePatent() }
+                } label: {
+                    HStack {
+                        if isAnalyzing {
+                            ProgressView()
+                                .tint(.white)
+                        } else {
+                            Image(systemName: "sparkles")
+                        }
+                        Text(isAnalyzing ? "Analyzing..." : "Analyze with AI")
                     }
-                    Text(isAnalyzing ? "Analyzing..." : "Analyze with AI")
+                    .frame(maxWidth: .infinity)
+                    .padding()
+                    .background(Color.blue)
+                    .foregroundStyle(.white)
+                    .clipShape(RoundedRectangle(cornerRadius: 12))
                 }
-                .frame(maxWidth: .infinity)
-                .padding()
-                .background(Color.blue)
-                .foregroundStyle(.white)
-                .clipShape(RoundedRectangle(cornerRadius: 12))
+                .disabled(isAnalyzing)
+
+                Button {
+                    showHistory = true
+                } label: {
+                    Image(systemName: "clock.arrow.circlepath")
+                        .font(.title3)
+                        .padding()
+                        .background(Color(.systemGray5))
+                        .clipShape(RoundedRectangle(cornerRadius: 12))
+                }
             }
-            .disabled(isAnalyzing)
 
             Text("Get AI-powered business ideas, market analysis, and an implementation roadmap")
                 .font(.caption)
@@ -551,7 +567,10 @@ struct PatentDetailView: View {
         analysisError = nil
 
         do {
-            analysis = try await AIService.shared.analyzePatent(patent)
+            let result = try await AIService.shared.analyzePatent(patent)
+            analysis = result
+            // Save to history
+            BusinessAnalysisHistoryStore.shared.addEntry(patent: patent, analysis: result)
             showAnalysis = true
         } catch {
             analysisError = error.localizedDescription

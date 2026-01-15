@@ -61,14 +61,6 @@ struct ProblemSolverView: View {
                         }
                     }
                 }
-                ToolbarItem(placement: .keyboard) {
-                    HStack {
-                        Spacer()
-                        Button("Done") {
-                            isInputFocused = false
-                        }
-                    }
-                }
             }
             .sheet(isPresented: $showHistory) {
                 HistorySheet(
@@ -133,12 +125,35 @@ struct ProblemSolverView: View {
         .padding(.vertical, 20)
     }
 
-    private var examplePrompts: [String] {
+    // All available prompts - rotates every 30 minutes
+    private static let allPrompts: [[String]] = [
         [
             "I need to cool electronics without fans",
             "How can I purify water without chemicals?",
             "Detect cracks in structures automatically"
+        ],
+        [
+            "Lightweight materials for drones",
+            "Reduce noise in aircraft engines",
+            "Monitor air quality in buildings"
+        ],
+        [
+            "Generate power from vibrations",
+            "Protect equipment from radiation",
+            "Improve battery efficiency"
+        ],
+        [
+            "Filter microplastics from water",
+            "Self-healing materials for vehicles",
+            "Non-invasive health monitoring"
         ]
+    ]
+
+    private var examplePrompts: [String] {
+        // Rotate every 30 minutes based on timestamp
+        let rotationPeriod: TimeInterval = 1800 // 30 minutes
+        let index = Int(Date().timeIntervalSince1970 / rotationPeriod) % Self.allPrompts.count
+        return Self.allPrompts[index]
     }
 
     // MARK: - Input Section
@@ -309,8 +324,15 @@ struct ProblemSolverView: View {
 
             searchPhase = "Searching patents..."
             var allPatents: [Patent] = []
-            for keyword in keywords.prefix(4) {
-                if let results = try? await NASAAPI.shared.searchPatents(query: keyword) {
+
+            // Search keywords in parallel to reduce hang time
+            await withTaskGroup(of: [Patent].self) { group in
+                for keyword in keywords.prefix(4) {
+                    group.addTask {
+                        (try? await NASAAPI.shared.searchPatents(query: keyword)) ?? []
+                    }
+                }
+                for await results in group {
                     allPatents.append(contentsOf: results)
                 }
             }
