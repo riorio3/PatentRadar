@@ -67,10 +67,11 @@ struct ProblemSolverView: View {
                     Button {
                         isInputFocused = false
                     } label: {
-                        Image(systemName: "chevron.down")
-                            .font(.system(size: 16, weight: .medium))
-                            .foregroundStyle(.secondary)
+                        RoundedRectangle(cornerRadius: 3)
+                            .fill(Color(.systemGray3))
+                            .frame(width: 36, height: 5)
                     }
+                    Spacer()
                 }
             }
             .sheet(isPresented: $showHistory) {
@@ -372,6 +373,9 @@ struct ProblemSolverView: View {
                 solution: result,
                 matchedPatents: uniquePatents
             )
+
+            // Clear input after successful search
+            problemText = ""
 
         } catch {
             errorMessage = error.localizedDescription

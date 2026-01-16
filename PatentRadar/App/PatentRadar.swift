@@ -24,22 +24,43 @@ struct ContentView: View {
                     Label("Discover", systemImage: "magnifyingglass")
                 }
 
-            ProblemSolverView()
+            LazyView(ProblemSolverView())
                 .tabItem {
                     Label("Solve", systemImage: "lightbulb")
                 }
 
-            SavedPatentsView()
+            LazyView(SavedPatentsView())
                 .tabItem {
                     Label("Saved", systemImage: "bookmark.fill")
                 }
 
-            SettingsView()
+            LazyView(SettingsView())
                 .tabItem {
                     Label("Settings", systemImage: "gear")
                 }
         }
         .tint(.blue)
+    }
+}
+
+// MARK: - Lazy View Wrapper
+struct LazyView<Content: View>: View {
+    @State private var hasAppeared = false
+    let build: () -> Content
+
+    init(_ build: @autoclosure @escaping () -> Content) {
+        self.build = build
+    }
+
+    var body: some View {
+        Group {
+            if hasAppeared {
+                build()
+            } else {
+                Color.clear
+                    .onAppear { hasAppeared = true }
+            }
+        }
     }
 }
 
