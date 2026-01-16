@@ -54,15 +54,17 @@ class PatentStore: ObservableObject {
 
     init() {
         // Defer loading to background to not block app launch
-        Task.detached(priority: .userInitiated) { [weak self] in
-            let patents = Self.loadSavedPatentsFromDisk()
-            let key = KeychainService.shared.getAPIKey() ?? ""
+        Task { @MainActor [weak self] in
+            let patents = await Task.detached(priority: .userInitiated) {
+                Self.loadSavedPatentsFromDisk()
+            }.value
+            let key = await Task.detached(priority: .userInitiated) {
+                KeychainService.shared.getAPIKey() ?? ""
+            }.value
 
-            await MainActor.run {
-                self?.savedPatents = patents
-                self?.apiKey = key
-                self?.isReady = true
-            }
+            self?.savedPatents = patents
+            self?.apiKey = key
+            self?.isReady = true
         }
     }
 

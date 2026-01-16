@@ -28,11 +28,11 @@ class BusinessAnalysisHistoryStore: ObservableObject {
 
     private init() {
         // Defer loading to background to not block app launch
-        Task.detached(priority: .userInitiated) { [weak self] in
-            let entries = Self.loadHistoryFromDisk()
-            await MainActor.run {
-                self?.history = entries
-            }
+        Task { @MainActor [weak self] in
+            let entries = await Task.detached(priority: .userInitiated) {
+                Self.loadHistoryFromDisk()
+            }.value
+            self?.history = entries
         }
     }
 
