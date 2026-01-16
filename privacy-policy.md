@@ -3,13 +3,13 @@ layout: default
 title: Privacy Policy
 ---
 
-# Privacy Policy for NASA Patent App
+# Privacy Policy for PatentRadar
 
-**Last Updated: January 14, 2025**
+**Last Updated: January 16, 2025**
 
 ## Overview
 
-NASA Patent App ("the App") helps users discover and analyze NASA patents available for licensing. This privacy policy explains how we handle your data.
+PatentRadar ("the App") helps users discover and analyze government patents available for licensing. This privacy policy explains how we handle your data.
 
 ## Data Collection
 
@@ -65,7 +65,7 @@ We may update this privacy policy. Changes will be reflected in the "Last Update
 
 ## Contact
 
-For questions about this privacy policy, contact: [Your Email]
+For questions about this privacy policy, contact us through the App Store listing or leave a review.
 
 ## Your Rights
 
@@ -73,4 +73,4 @@ Since all data is stored locally on your device and we don't collect personal in
 
 ---
 
-*NASA Patent App is not affiliated with, endorsed by, or sponsored by NASA. Patent data is sourced from NASA's publicly available Technology Transfer Portal.*
+*PatentRadar is not affiliated with, endorsed by, or sponsored by NASA. Patent data is sourced from NASA's publicly available Technology Transfer Portal.*
