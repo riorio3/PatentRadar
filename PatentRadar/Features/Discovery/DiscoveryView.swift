@@ -9,7 +9,6 @@ struct DiscoveryView: View {
     @State private var errorMessage: String?
     @State private var hasSearched = false
 
-    // Pre-computed to avoid recalculation during render
     private let categories = PatentCategory.allCases
     private let columns = [
         GridItem(.flexible(), spacing: 12, alignment: .top),
@@ -19,29 +18,29 @@ struct DiscoveryView: View {
 
     var body: some View {
         NavigationStack {
-            ScrollView {
-                VStack(spacing: 20) {
-                    // Category Pills - only show when viewing results
-                    if hasSearched || !patents.isEmpty {
-                        categoryPills
-                    }
-
-                    // Content
-                    if isLoading {
-                        loadingView
-                    } else if let error = errorMessage {
-                        errorView(error)
-                    } else if patents.isEmpty && hasSearched {
-                        emptyView
-                    } else if patents.isEmpty {
-                        welcomeView
-                    } else {
-                        patentsGrid
-                    }
+            VStack(spacing: 0) {
+                if hasSearched || !patents.isEmpty {
+                    categoryPills
                 }
-                .padding()
+
+                ScrollView {
+                    VStack(spacing: 20) {
+                        if isLoading {
+                            loadingView
+                        } else if let error = errorMessage {
+                            errorView(error)
+                        } else if patents.isEmpty && hasSearched {
+                            emptyView
+                        } else if patents.isEmpty {
+                            welcomeView
+                        } else {
+                            patentsGrid
+                        }
+                    }
+                    .padding()
+                }
             }
-            .navigationTitle("Discover Patents")
+            .navigationTitle("")
             .toolbar {
                 if hasSearched || !patents.isEmpty {
                     ToolbarItem(placement: .topBarLeading) {
@@ -58,16 +57,11 @@ struct DiscoveryView: View {
                 guard !searchText.trimmingCharacters(in: .whitespaces).isEmpty else { return }
                 Task { await search() }
             }
-            .refreshable {
-                await search()
-            }
             .navigationDestination(for: Patent.self) { patent in
                 PatentDetailView(patent: patent)
             }
         }
     }
-
-    // MARK: - Navigation
 
     private func goHome() {
         withAnimation {
@@ -79,22 +73,33 @@ struct DiscoveryView: View {
         }
     }
 
-    // MARK: - Views
-
     private var categoryPills: some View {
-        ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 10) {
-                ForEach(categories, id: \.self) { category in
-                    CategoryPill(
-                        category: category,
-                        isSelected: selectedCategory == category
-                    ) {
-                        selectedCategory = category
-                        Task { await search() }
+        ScrollViewReader { proxy in
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 10) {
+                    ForEach(categories, id: \.self) { category in
+                        CategoryPill(
+                            category: category,
+                            isSelected: selectedCategory == category
+                        ) {
+                            selectedCategory = category
+                            Task { await search() }
+                        }
+                        .id(category)
                     }
                 }
+                .padding(.horizontal, 4)
             }
-            .padding(.horizontal, 4)
+            .padding(.vertical, 8)
+            .background(Color(.systemBackground))
+            .onAppear {
+                proxy.scrollTo(selectedCategory, anchor: .center)
+            }
+            .onChange(of: selectedCategory) { newCategory in
+                withAnimation {
+                    proxy.scrollTo(newCategory, anchor: .center)
+                }
+            }
         }
     }
 
@@ -142,7 +147,6 @@ struct DiscoveryView: View {
 
     private var welcomeView: some View {
         VStack(spacing: 24) {
-            // Header
             VStack(spacing: 12) {
                 Image(systemName: "sparkles")
                     .font(.system(size: 48))
@@ -156,8 +160,6 @@ struct DiscoveryView: View {
                     .foregroundStyle(.secondary)
                     .multilineTextAlignment(.center)
             }
-
-            // Category Grid
             categoryGrid
         }
         .padding(.top, 20)
@@ -185,32 +187,32 @@ struct DiscoveryView: View {
         }
     }
 
-    // MARK: - Actions
-
     private func search() async {
         isLoading = true
         errorMessage = nil
         hasSearched = true
 
-        // Yield to let SwiftUI render loading state
         await Task.yield()
 
         do {
+            let results: [Patent]
             if searchText.isEmpty {
-                patents = try await NASAAPI.shared.browsePatents(category: selectedCategory)
+                results = try await NASAAPI.shared.browsePatents(category: selectedCategory)
             } else {
-                patents = try await NASAAPI.shared.searchPatents(query: searchText)
+                results = try await NASAAPI.shared.searchPatents(query: searchText)
             }
+            withAnimation(.easeInOut(duration: 0.2)) {
+                patents = results
+            }
+        } catch is CancellationError {
+            // Ignore
         } catch {
             errorMessage = error.localizedDescription
         }
 
         isLoading = false
     }
-
 }
-
-// MARK: - Supporting Views
 
 struct CategoryGridItem: View {
     let category: PatentCategory
@@ -234,7 +236,6 @@ struct CategoryGridItem: View {
             .clipShape(RoundedRectangle(cornerRadius: 12))
         }
         .buttonStyle(.plain)
-        .accessibilityLabel("Browse \(category.shortName) patents")
     }
 }
 
@@ -257,12 +258,5 @@ struct CategoryPill: View {
             .foregroundStyle(isSelected ? .white : .primary)
             .clipShape(Capsule())
         }
-        .accessibilityLabel("Filter by \(category.shortName)")
-        .accessibilityAddTraits(isSelected ? .isSelected : [])
     }
-}
-
-#Preview {
-    DiscoveryView()
-        .environmentObject(PatentStore())
 }
